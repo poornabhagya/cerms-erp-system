@@ -1,0 +1,47 @@
+# ==============================================================================
+# Construction Equipment Rental Management System (CERMS)
+# Python Dependencies (Django 5+ / Python 3.12)
+# ==============================================================================
+
+# Core Framework & Server
+Django>=5.0,<5.2
+python-decouple>=3.8
+gunicorn>=21.2.0
+
+# Database (MariaDB 10.11 LTS / MySQL)
+mysqlclient>=2.2.4
+
+# REST API & Authentication
+djangorestframework>=3.14.0
+djangorestframework-simplejwt>=5.3.1
+django-filter>=23.5
+django-cors-headers>=4.3.1
+
+# Background Tasks, Message Broker & Caching
+celery>=5.3.6
+redis>=5.0.1
+django-celery-beat>=2.5.0
+
+# Cloud Storage & AWS S3 Integration
+boto3>=1.34.40
+django-storages>=1.14.2
+
+# PDF Generation & Image Processing
+weasyprint>=61.0
+reportlab>=4.1.0
+Pillow>=10.2.0
+
+# Form Rendering & Bootstrap 5 UI Helpers
+django-crispy-forms>=2.1
+crispy-bootstrap5>=2024.2
+django-widget-tweaks>=1.5.0
+
+# HTTP Client & External Integrations (SMS, WhatsApp, Webhooks)
+requests>=2.31.0
+
+# Testing, QA & Data Seeding (Development & CI/CD)
+factory-boy>=3.3.0
+Faker>=24.0.0
+pytest>=8.0.0
+pytest-django>=4.8.0
+coverage>=7.4.0

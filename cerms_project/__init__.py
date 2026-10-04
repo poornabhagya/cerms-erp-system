@@ -1,0 +1,8 @@
+"""
+Construction Equipment Rental Management System (CERMS)
+Main Application Package Initialization
+"""
+
+from .celery import app as celery_app
+
+__all__ = ('celery_app',)

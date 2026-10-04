@@ -1,0 +1,133 @@
+# ==============================================================================
+# Construction Equipment Rental Management System (CERMS)
+# Comprehensive Git Ignore Rules (.gitignore)
+# Reference: docs/11_SECURITY_AND_AUTHENTICATION.md, docs/14_GIT_AND_VERSION_CONTROL.md
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Variables & Secrets (CRITICAL)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+!telegram.env.example
+
+# ------------------------------------------------------------------------------
+# 2. Virtual Environments & Python Runtime
+# ------------------------------------------------------------------------------
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ------------------------------------------------------------------------------
+# 3. SSL / TLS Certificates & Private Keys
+# ------------------------------------------------------------------------------
+certs/
+*.pem
+*.key
+*.crt
+*.csr
+*.cer
+*.p12
+*.pfx
+
+# ------------------------------------------------------------------------------
+# 4. Infrastructure as Code (Terraform)
+# ------------------------------------------------------------------------------
+# Local .terraform directories and plugin caches
+**/.terraform/*
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+crash.log
+
+# ------------------------------------------------------------------------------
+# 5. Static & User-Uploaded Media Assets
+# ------------------------------------------------------------------------------
+collected_static/
+staticfiles/
+media/*
+!media/.gitkeep
+
+# ------------------------------------------------------------------------------
+# 6. Databases & Backup Dumps
+# ------------------------------------------------------------------------------
+*.sqlite3
+*.db
+*.sql
+*.sql.gz
+*.sql.gz.gpg
+*.gpg
+*.tar.gz
+*.dump
+/tmp/
+
+# ------------------------------------------------------------------------------
+# 7. Logs & Runtime Telemetry
+# ------------------------------------------------------------------------------
+*.log
+logs/
+error_log
+django_error.log
+celery_worker.log
+
+# ------------------------------------------------------------------------------
+# 8. Automated Testing, QA & Smoke Test Output
+# ------------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+smoke_test_summary.json
+staging_smoke_summary.json
+prod_smoke_summary.json
+error_summary.html
+
+# ------------------------------------------------------------------------------
+# 9. IDE & Operating System Metadata
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
