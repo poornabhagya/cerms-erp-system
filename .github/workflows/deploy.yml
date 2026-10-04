@@ -14,7 +14,6 @@ env:
   ECR_REPOSITORY: cerms-web-repo
   ROLE_TO_ASSUME: arn:aws:iam::804372444724:role/cerms-github-actions-deploy-role
   PROD_INSTANCE_ID: i-093dc6493e6f4636f
-  SNS_TOPIC_ARN: arn:aws:sns:ap-south-1:804372444724:cerms-devops-alerts
 
 jobs:
   promote-and-deploy:
@@ -93,6 +92,8 @@ jobs:
               \"sleep 5\",
               \"docker exec cerms_web python manage.py migrate --noinput\",
               \"docker exec cerms_web python manage.py collectstatic --noinput\",
+              \"chmod +x ./scripts/healthcheck_harness.sh\",
+              \"./scripts/healthcheck_harness.sh\",
               \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
               \"docker cp /opt/cerms/scan_urls.py cerms_web:/app/scan_urls.py || true\",
               \"docker exec cerms_web python scan_urls.py || true\",
@@ -214,11 +215,26 @@ jobs:
           name: production-smoke-test-summary-${{ github.ref_name }}
           path: prod_smoke_summary.json
 
-      - name: Send Production DevOps Alert via AWS SNS
+      - name: Send Production Release Email Alert
         if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          python3 scripts/send_sns_alert.py --env production --summary-file prod_smoke_summary.json
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "[PROD RELEASE] Version ${{ github.ref_name }} - Status:${{ job.status }}"
+          to: ${{ secrets.ALERT_RECIPIENTS }}
+          from: "CERMS CI/CD System <${{ secrets.EMAIL_USERNAME }}>"
+          html_body: |
+            <h2>CERMS - Hardware Renting System - Production Release Promotion Report</h2>
+            <p><strong>Release Tag:</strong> ${{ github.ref_name }}</p>
+            <p><strong>Target Environment:</strong> Production Host (10.0.1.0/24)</p>
+            <p><strong>Triggered By:</strong> ${{ github.actor }}</p>
+            <p><strong>Deployment Status:</strong> ${{ job.status }}</p>
+            <hr/>
+            <p>Production verification metrics have been dynamically captured. Any failing routes or stack traces are visible directly in the Job Summary table.</p>
+            <p><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Full Release Pipeline & Route Breakdown</a></p>
 
 

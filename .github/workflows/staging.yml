@@ -18,7 +18,6 @@ env:
   ECR_REPOSITORY: cerms-web-repo
   ROLE_TO_ASSUME: arn:aws:iam::804372444724:role/cerms-github-actions-deploy-role
   STAGING_INSTANCE_ID: i-0cb762fcdb76a4720
-  SNS_TOPIC_ARN: arn:aws:sns:ap-south-1:804372444724:cerms-devops-alerts
 
 jobs:
   test:
@@ -138,6 +137,8 @@ jobs:
               "sleep 5",
               "docker exec cerms_web python manage.py migrate --noinput",
               "docker exec cerms_web python manage.py collectstatic --noinput",
+              "chmod +x ./scripts/healthcheck_harness.sh",
+              "./scripts/healthcheck_harness.sh",
               "docker cp scan_urls.py cerms_web:/app/scan_urls.py || true",
               "docker exec cerms_web python scan_urls.py || true",
               "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
@@ -255,11 +256,26 @@ jobs:
           name: staging-smoke-test-summary-${{ github.sha }}
           path: staging_smoke_summary.json
 
-      - name: Send DevOps Alert via AWS SNS
+      - name: Send Email Deployment & Smoke Test Alert
         if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          python3 scripts/send_sns_alert.py --env staging --summary-file staging_smoke_summary.json
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "[CI/CD Staging Alert] Commit ${{ github.sha }} - Status:${{ job.status }}"
+          to: ${{ secrets.ALERT_RECIPIENTS }}
+          from: "CERMS CI/CD System <${{ secrets.EMAIL_USERNAME }}>"
+          html_body: |
+            <h2>CERMS - Hardware Renting System - Staging Smoke Test Report</h2>
+            <p><strong>Repository:</strong> ${{ github.repository }}</p>
+            <p><strong>Commit:</strong> ${{ github.sha }}</p>
+            <p><strong>Author:</strong> ${{ github.actor }}</p>
+            <p><strong>Environment:</strong> AWS Staging (10.0.2.0/24)</p>
+            <p><strong>Execution Status:</strong> ${{ job.status }}</p>
+            <hr/>
+            <p><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Click here to view full GitHub Actions Run & Error Breakdown</a></p>
 
 
