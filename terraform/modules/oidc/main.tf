@@ -76,7 +76,8 @@ resource "aws_iam_policy" "github_ssm_deploy" {
           "ssm:SendCommand",
           "ssm:GetCommandInvocation",
           "ssm:ListCommandInvocations",
-          "ssm:DescribeInstanceInformation"
+          "ssm:DescribeInstanceInformation",
+          "sns:Publish"
         ]
         Resource = "*"
       }
