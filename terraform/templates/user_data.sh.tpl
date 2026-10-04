@@ -70,4 +70,10 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 
+echo "=========================================="
+echo "6. Configuring Nightly Disaster Recovery Cron"
+echo "=========================================="
+mkdir -p /opt/cerms/scripts
+(crontab -l 2>/dev/null | grep -v "nightly_db_backup.sh" ; echo "0 2 * * * /bin/bash /opt/cerms/scripts/nightly_db_backup.sh >> /var/log/cerms_backup.log 2>&1") | crontab -
+
 echo "CERMS Cloud-Init Bootstrap Completed Successfully!"
