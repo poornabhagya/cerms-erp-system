@@ -91,6 +91,7 @@ jobs:
               \"docker compose restart nginx || true\",
               \"sleep 5\",
               \"docker exec cerms_web python manage.py migrate --noinput\",
+              \"docker exec cerms_web python manage.py seed_initial_data || true\",
               \"docker exec cerms_web python manage.py collectstatic --noinput\",
               \"chmod +x ./scripts/healthcheck_harness.sh\",
               \"./scripts/healthcheck_harness.sh\",
