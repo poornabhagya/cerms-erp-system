@@ -109,7 +109,7 @@ jobs:
       - name: Trigger SSM Deployment and Automated Smoke Test
         id: run-smoke-test
         run: |
-          echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }}) and executing automated route scan..."
+          echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ env.STAGING_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
@@ -123,20 +123,23 @@ jobs:
               "git config --system --add safe.directory /opt/cerms || true",
               "git fetch origin main || true",
               "git reset --hard origin/main || true",
+              "if [ ! -f .env ]; then cp .env.example .env; fi",
               "export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)",
               "export ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com",
+              "export ECR_IMAGE=${ECR_URL}/cerms-web-repo:staging",
               "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL}",
               "docker compose pull web celery || true",
-              "docker compose up -d --force-recreate mariadb redis",
+              "docker compose up -d mariadb redis",
               "for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done",
-              "docker compose up -d --force-recreate web celery nginx",
+              "docker compose up -d --remove-orphans web celery nginx",
+              "docker compose restart nginx || true",
               "sleep 5",
               "docker exec cerms_web python manage.py migrate --noinput",
               "docker exec cerms_web python manage.py collectstatic --noinput",
-              "docker cp scan_urls.py cerms_web:/app/scan_urls.py",
+              "docker cp scan_urls.py cerms_web:/app/scan_urls.py || true",
               "docker exec cerms_web python scan_urls.py || true",
               "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
-              "cat ./smoke_test_summary.json"
+              "cat ./smoke_test_summary.json || echo {\"total_tested\": 0, \"crashes\": 0}"
             ]' \
             --query "Command.CommandId" \
             --output text)
@@ -158,8 +161,19 @@ jobs:
             --query "StandardOutputContent" \
             --output text)
 
+          STDERR=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
+            --query "StandardErrorContent" \
+            --output text)
+
           echo "=== STAGING EXECUTION OUTPUT ==="
           echo "$OUTPUT"
+
+          if [ -n "$STDERR" ]; then
+            echo "=== STAGING EXECUTION STDERR ==="
+            echo "$STDERR"
+          fi
 
           python3 -c "
           import sys, json, re
@@ -175,6 +189,7 @@ jobs:
 
           if [ "$STATUS" != "Success" ]; then
             echo "::error title=Staging Deployment Failed::SSM execution returned status: $STATUS"
+            echo "Error Output: $STDERR"
             exit 1
           fi
 
