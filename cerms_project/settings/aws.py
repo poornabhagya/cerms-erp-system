@@ -6,7 +6,10 @@ Reference: docs/05_DEVOPS_AND_CLOUD.md, docs/10_LOGGING_AND_ERROR_HANDLING.md,
 """
 
 from .base import *
-from decouple import config
+from decouple import config, Csv
+
+# Ensure ALLOWED_HOSTS allows all EC2 public IPs and domains if specified or defaulted
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
 
 # Ensure AWS environment specific apps list
 INSTALLED_APPS = list(INSTALLED_APPS)
