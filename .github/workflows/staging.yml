@@ -131,6 +131,7 @@ jobs:
               "docker compose pull web celery || true",
               "docker compose up -d mariadb redis",
               "for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done",
+              "docker exec cerms_mariadb mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS cerms_db; CREATE USER IF NOT EXISTS '\''cerms_user'\''@'\''%'\'' IDENTIFIED BY '\''cerms_secure_password_2026'\''; ALTER USER '\''cerms_user'\''@'\''%'\'' IDENTIFIED BY '\''cerms_secure_password_2026'\''; GRANT ALL PRIVILEGES ON cerms_db.* TO '\''cerms_user'\''@'\''%'\''; FLUSH PRIVILEGES;\" || true",
               "docker compose up -d --remove-orphans web celery nginx",
               "docker compose restart nginx || true",
               "sleep 5",
