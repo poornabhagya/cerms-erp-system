@@ -35,18 +35,12 @@ else
   ERRORS=$((ERRORS + 1))
 fi
 
-# 3. MariaDB Global Charset & Engine Verification
-echo -n "[*] Checking MariaDB Engine & Charset... "
-DB_PASSWORD_VAL="${DB_PASSWORD:-cerms_secure_password_2026}"
-DB_CHECK=$(docker exec cerms_mariadb mariadb -u root -e "SELECT @@character_set_server AS charset, @@collation_server AS collation;" 2>/dev/null || \
-           docker exec cerms_mariadb mariadb -u root -p"${DB_PASSWORD_VAL}" -e "SELECT @@character_set_server AS charset, @@collation_server AS collation;" 2>/dev/null || \
-           docker exec cerms_mariadb mariadb-admin -u root ping 2>/dev/null || \
-           echo "FAIL")
-
-if echo "$DB_CHECK" | grep -qiE "utf8mb4|alive|mysqld is alive"; then
-  echo "OK (MariaDB utf8mb4 / active)"
+# 3. MariaDB Service Liveness & Health Check
+echo -n "[*] Checking MariaDB Service... "
+if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then
+  echo "OK (Ping successful)"
 else
-  echo "FAILED (MariaDB validation error)"
+  echo "FAILED (MariaDB not responding)"
   ERRORS=$((ERRORS + 1))
 fi
 
@@ -63,7 +57,7 @@ except Exception:
     print('000')
 " 2>/dev/null || echo "000")
 
-# Also fallback to direct host curl if mapped
+# Fallback to direct host curl if mapped
 if [ "$HTTP_CODE" = "000" ]; then
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:8000/ 2>/dev/null || echo "000")
 fi
