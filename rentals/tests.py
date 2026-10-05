@@ -70,3 +70,46 @@ class CustomerModelTestCase(TestCase):
 
         with self.assertRaises(ValidationError):
             validate_customer_credit_limit(self.customer, Decimal("10000.00"), raise_exception=True)
+
+
+class CustomerViewsTestCase(TestCase):
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            customer_code="CUST-2026-002",
+            company_name="MAGA Engineering",
+            contact_person="Rohan Fernando",
+            phone="+94772223344",
+            email="rohan@maga.lk",
+            billing_address="Colombo 05",
+            credit_limit=Decimal("500000.00"),
+            current_outstanding_balance=Decimal("0.00"),
+            status=Customer.Status.ACTIVE
+        )
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-COL-002",
+            customer=self.customer,
+            project_name="Marine Drive Extension",
+            site_address="Bambalapitiya",
+            status=ProjectSite.Status.ACTIVE
+        )
+
+    def test_unauthenticated_views_redirect_to_login(self):
+        # Customer List
+        res = self.client.get('/rentals/customers/')
+        self.assertEqual(res.status_code, 302)
+
+        # Customer Detail
+        res = self.client.get(f'/rentals/customers/{self.customer.customer_code}/')
+        self.assertEqual(res.status_code, 302)
+
+        # Customer Create
+        res = self.client.get('/rentals/customers/create/')
+        self.assertEqual(res.status_code, 302)
+
+        # Site List
+        res = self.client.get('/rentals/sites/')
+        self.assertEqual(res.status_code, 302)
+
+        # Site Create
+        res = self.client.get('/rentals/sites/create/')
+        self.assertEqual(res.status_code, 302)

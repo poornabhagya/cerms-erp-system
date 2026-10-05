@@ -17,6 +17,9 @@ urlpatterns = [
     # Fleet & Equipment Master Management
     path('fleet/', include('fleet.urls')),
 
+    # Rentals & Customer Management
+    path('rentals/', include('rentals.urls')),
+
     # Root redirect to profile/login
     path('', RedirectView.as_view(pattern_name='users:profile', permanent=False), name='home_redirect'),
 ]
