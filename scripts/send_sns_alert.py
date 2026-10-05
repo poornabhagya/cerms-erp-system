@@ -72,7 +72,7 @@ def main():
 
     # 3. Construct Subject and Message Payload
     if args.environment == "staging":
-        instance_id = os.environ.get("STAGING_INSTANCE_ID", "i-0cb762fcdb76a4720")
+        instance_id = os.environ.get("STAGING_INSTANCE_ID", "i-019e7ec73f4e72565")
         subject = f"[CERMS Staging] Deployment {status_text}: Commit {commit_short}"
         env_title = "STAGING"
         env_details = "Staging Silo (ap-south-1b | 10.10.2.0/24)"

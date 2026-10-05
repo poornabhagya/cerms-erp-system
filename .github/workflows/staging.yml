@@ -17,7 +17,7 @@ env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: cerms-web-repo
   ROLE_TO_ASSUME: arn:aws:iam::804372444724:role/cerms-github-actions-deploy-role
-  STAGING_INSTANCE_ID: i-0cb762fcdb76a4720
+  STAGING_INSTANCE_ID: i-019e7ec73f4e72565
 
 jobs:
   test:
