@@ -176,19 +176,7 @@ graph TD
 
 #### 3.2 Customer Business Logic & Credit Limit Verification
 - **Service Function (`rentals/services.py`):**
-  - `validate_customer_credit_limit(customer, new_quotation_amount)`: Checks if `outstanding_balance + new_amount > credit_limit`, evaluates `BLOCKED` or `INACTIVE` account standing, and returns a structured validation payload with `requires_approval=True` and `exceeded_by` amount.
-
-#### 3.3 Customer & Project Site UI Layer (`rentals` App)
-- **Class-Based Views (`rentals/views.py`):**
-  - `CustomerListView`: DataTables list view with search, status filtering, credit utilization progress bar, and summary KPI cards.
-  - `CustomerDetailView`: Customer dossier displaying contact details, active project sites, credit limit telemetry, quotation history, active contracts, and outstanding receivables.
-  - `CustomerCreateView` & `CustomerUpdateView`: Crispy Bootstrap 5 form for customer corporate registration.
-  - `ProjectSiteCreateView` & `ProjectSiteUpdateView`: Form for registering and managing construction site destinations and resident engineer contacts.
-- **Responsive Templates (`templates/rentals/`):**
-  - `templates/rentals/customer_list.html`: Interactive DataTables grid with credit limit indicators and contact badges.
-  - `templates/rentals/customer_detail.html`: Full 360-degree customer dossier with project sites table and linked rental engagements.
-  - `templates/rentals/customer_form.html`: Form with Crispy Bootstrap 5 styling.
-  - `templates/rentals/projectsite_form.html`: Construction site registration and GPS location modal/page.
+  - `validate_customer_credit_limit(customer, new_quotation_amount)`: Checks if `outstanding_balance + new_amount > credit_limit` and raises a validation warning or forces management approval.
 
 ---
 
@@ -280,24 +268,6 @@ graph TD
   4. Transitions `RentalContract.status` &rarr; `RETURNED`.
   5. Automatically triggers invoice calculation in the `finance` service layer.
 
-#### 4.3 Rental Lifecycle UI Layer (`rentals` App — Quotations, Contracts, Logistics)
-- **Class-Based Views (`rentals/views.py`):**
-  - `QuotationListView`: DataTables view with status tabs (Draft, Pending Approval, Accepted, Converted) and quick action modals.
-  - `QuotationDetailView`: Itemized quotation breakdown, credit check status alert, PDF download trigger, and workflow transition buttons (Submit for Approval, Approve, Convert to Contract).
-  - `QuotationCreateView` & `QuotationUpdateView`: Crispy Bootstrap 5 form with dynamic equipment rate auto-fill and real-time total computation.
-  - `RentalContractListView`: Active contracts overview, billing cycle filtering, and live equipment deployment tracker.
-  - `RentalContractDetailView`: Official contract dossier, signed PDF preview, dispatch/return status badge, and invoice link.
-  - `DispatchCreateView`: Field-friendly mobile inspection form for logging dispatch hour-meter, fuel gauge %, and checklist items.
-  - `ReturnCreateView`: Inspection receiving form for logging return hour meter, fuel difference, damage assessment, and triggering billing settlement.
-- **Responsive Templates (`templates/rentals/`):**
-  - `templates/rentals/quotation_list.html`: Quotation grid with approval status badges.
-  - `templates/rentals/quotation_detail.html`: Quotation view with approval and conversion action buttons.
-  - `templates/rentals/quotation_form.html`: Quotation builder with customer and equipment selectors.
-  - `templates/rentals/contract_list.html`: Rental contracts monitoring table.
-  - `templates/rentals/contract_detail.html`: Contract dossier with linked dispatch/return logs.
-  - `templates/rentals/dispatch_form.html`: Mobile-responsive pre-dispatch inspection form.
-  - `templates/rentals/return_form.html`: Mobile-responsive post-rental return receiving form.
-
 ---
 
 ### Step 5: Financial Management — Billing, Payments & Deposits (`finance` App)
@@ -372,18 +342,6 @@ graph TD
   2. Updates `Invoice.paid_amount` and marks status `PAID` or `PARTIALLY_PAID`.
   3. Decrements `Customer.current_outstanding_balance`.
 
-#### 5.3 Financials UI Layer (`finance` App — Invoices, Payments, Deposits)
-- **Class-Based Views (`finance/views.py`):**
-  - `InvoiceListView`: DataTables view displaying outstanding receivables, overdue alerts, payment status badges, and total revenue KPI cards.
-  - `InvoiceDetailView`: Itemized tax invoice view with payment logs, security deposit credit offset, and WeasyPrint PDF export button.
-  - `PaymentCreateView`: Payment recording form/modal for settling invoices or receiving security deposits.
-  - `SecurityDepositListView` & `SecurityDepositDetailView`: Escrow tracking view for held, deducted, and refunded deposits.
-- **Responsive Templates (`templates/finance/`):**
-  - `templates/finance/invoice_list.html`: Receivables and invoicing grid with status filters.
-  - `templates/finance/invoice_detail.html`: Itemized tax invoice preview with print/download actions.
-  - `templates/finance/payment_form.html`: Payment settlement entry form.
-  - `templates/finance/deposit_list.html`: Security deposit escrow management dashboard.
-
 ---
 
 ### Step 6: Interactive Availability Calendar & Visual Scheduling
@@ -410,8 +368,6 @@ graph TD
           status='AVAILABLE'
       ).exclude(asset_code__in=conflicting_contracts)
   ```
-- **Calendar UI Template (`templates/rentals/calendar.html`):**
-  - Interactive visual timeline calendar with date range picker and machinery category filter.
 
 ---
 
@@ -427,13 +383,11 @@ To ensure clean execution without circular database dependencies or broken forei
 | **Step 2.1** | `fleet` | `models.py` (Category, Equipment, RentalRate) | `Category`, `Equipment`, `RentalRate` | `users.User` |
 | **Step 2.2** | `fleet` | `forms.py`, `views.py`, `templates/fleet/` | Fleet CRUD, Asset Master views | `fleet.models` |
 | **Step 3.1** | `rentals` | `models.py` (Customer, ProjectSite) | `Customer`, `ProjectSite` | `users.User` |
-| **Step 3.2** | `rentals` | `services.py` (Credit Limit Engine) | `validate_customer_credit_limit()` | `Customer` |
-| **Step 3.3** | `rentals` | `forms.py`, `views.py`, `templates/rentals/` | Customer & Project Site CRUD UI | `Customer`, `ProjectSite` |
+| **Step 3.2** | `rentals` | `forms.py`, `views.py`, `templates/rentals/` | Customer & Project Site CRUD | `Customer`, `ProjectSite` |
 | **Step 4.1** | `rentals` | `models.py` (Quotation, RentalContract) | `Quotation`, `RentalContract` | `Equipment`, `Customer` |
 | **Step 4.2** | `rentals` | `services.py` (Quotation Approval & Conversion) | `convert_quotation_to_contract()` | `Quotation`, `Contract` |
 | **Step 4.3** | `rentals` | `models.py` (DispatchReturn), `forms.py` | `DispatchReturn` (Logistics Log) | `RentalContract`, `Equipment` |
 | **Step 4.4** | `rentals` | `services.py` (Dispatch/Return Logistics Logic) | `process_equipment_dispatch/return()` | `DispatchReturn` |
-| **Step 4.5** | `rentals` | `views.py`, `templates/rentals/` | Quotation, Contract, Dispatch/Return UI | All Rental Models |
 | **Step 5.1** | `finance` | `models.py` (Invoice, Payment, SecurityDeposit) | `Invoice`, `Payment`, `SecurityDeposit`| `RentalContract`, `Customer`|
 | **Step 5.2** | `finance` | `services.py` (Billing Engine & WeasyPrint) | `generate_final_rental_invoice()` | `Invoice`, `DispatchReturn`|
 | **Step 5.3** | `finance` | `forms.py`, `views.py`, `templates/finance/` | Invoicing & Payment Settlement UI | `finance.models` |

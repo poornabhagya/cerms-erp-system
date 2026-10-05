@@ -12,7 +12,6 @@ from django.contrib.auth.models import Group
 from django.utils import timezone
 
 from fleet.models import Category, Equipment, RentalRate
-from rentals.models import Customer, ProjectSite
 
 User = get_user_model()
 
@@ -324,103 +323,6 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.WARNING(f"      [*] Updated Rate Card: Rs. {rate.daily_rate}/day"))
 
-        # ---------------------------------------------------------------------
-        # 5. Seed Corporate Customers & Project Sites
-        # ---------------------------------------------------------------------
-        self.stdout.write(self.style.NOTICE("\n--- Seeding Corporate Customers & Project Sites ---"))
-        customers_data = [
-            {
-                'customer_code': 'CUST-2026-001',
-                'company_name': 'Access Engineering PLC',
-                'contact_person': 'Sunil Jayawardena',
-                'phone': '+94 11 234 5678',
-                'email': 'procurement@accesseng.lk',
-                'billing_address': 'No. 278, Union Place, Colombo 02, Sri Lanka',
-                'vat_tax_number': 'VAT-102938475',
-                'credit_limit': Decimal('5000000.00'),
-                'current_outstanding_balance': Decimal('1500000.00'),
-                'status': Customer.Status.ACTIVE,
-                'sites': [
-                    {
-                        'project_code': 'PRJ-COL-001',
-                        'project_name': 'Port City Elevated Highway Package 2',
-                        'site_address': 'Marine Drive / Chaithya Road, Colombo 01',
-                        'gps_coordinates': '6.9344,79.8428',
-                        'site_contact_person': 'Eng. Nimal Rathnayake',
-                        'site_contact_phone': '+94 77 123 4567',
-                        'status': ProjectSite.Status.ACTIVE,
-                    },
-                    {
-                        'project_code': 'PRJ-KTY-002',
-                        'project_name': 'Katunayake Expressway Expansion',
-                        'site_address': 'Peliyagoda Interchange, Kelaniya',
-                        'gps_coordinates': '6.9667,79.8833',
-                        'site_contact_person': 'Eng. Sanjeewa Silva',
-                        'site_contact_phone': '+94 71 888 9999',
-                        'status': ProjectSite.Status.ACTIVE,
-                    }
-                ]
-            },
-            {
-                'customer_code': 'CUST-2026-002',
-                'company_name': 'MAGA Engineering (Pvt) Ltd',
-                'contact_person': 'Rohan Gunasekara',
-                'phone': '+94 11 456 7890',
-                'email': 'logistics@maga.lk',
-                'billing_address': 'No. 200, Nawala Road, Narahenpita, Colombo 05',
-                'vat_tax_number': 'VAT-987654321',
-                'credit_limit': Decimal('8000000.00'),
-                'current_outstanding_balance': Decimal('2200000.00'),
-                'status': Customer.Status.ACTIVE,
-                'sites': [
-                    {
-                        'project_code': 'PRJ-KND-003',
-                        'project_name': 'Central Expressway Stage III (Pothuhera - Galagedara)',
-                        'site_address': 'Alawwa Highway Yard, Kurunegala',
-                        'gps_coordinates': '7.3000,80.2500',
-                        'site_contact_person': 'Eng. Priyantha Bandara',
-                        'site_contact_phone': '+94 70 444 3322',
-                        'status': ProjectSite.Status.ACTIVE,
-                    }
-                ]
-            },
-            {
-                'customer_code': 'CUST-2026-003',
-                'company_name': 'Nawaloka Construction Co.',
-                'contact_person': 'Dinesh Perera',
-                'phone': '+94 11 789 1234',
-                'email': 'equipment@nawalokaconstruction.lk',
-                'billing_address': 'No. 115, Sir James Peiris Mawatha, Colombo 02',
-                'vat_tax_number': 'VAT-456123789',
-                'credit_limit': Decimal('3000000.00'),
-                'current_outstanding_balance': Decimal('0.00'),
-                'status': Customer.Status.ACTIVE,
-                'sites': []
-            }
-        ]
-
-        for citem in customers_data:
-            sites_list = citem.pop('sites')
-            cust, created = Customer.objects.update_or_create(
-                customer_code=citem['customer_code'],
-                defaults=citem
-            )
-            if created:
-                self.stdout.write(self.style.SUCCESS(f"  [+] Created Customer: {cust.company_name} ({cust.customer_code})"))
-            else:
-                self.stdout.write(self.style.WARNING(f"  [*] Customer already exists / updated: {cust.company_name}"))
-
-            for sitem in sites_list:
-                sitem['customer'] = cust
-                psite, s_created = ProjectSite.objects.update_or_create(
-                    project_code=sitem['project_code'],
-                    defaults=sitem
-                )
-                if s_created:
-                    self.stdout.write(self.style.SUCCESS(f"      [+] Created Site: {psite.project_name} ({psite.project_code})"))
-                else:
-                    self.stdout.write(self.style.WARNING(f"      [*] Site already exists: {psite.project_name}"))
-
         self.stdout.write(self.style.NOTICE("================================================================="))
-        self.stdout.write(self.style.SUCCESS("✓ All Initial Database Entities & Fleet/Customer Data Seeded Successfully!"))
+        self.stdout.write(self.style.SUCCESS("✓ All Initial Database Entities & Fleet Data Seeded Successfully!"))
         self.stdout.write(self.style.NOTICE("================================================================="))
