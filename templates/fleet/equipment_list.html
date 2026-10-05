@@ -159,13 +159,6 @@
                             </div>
                         </td>
                     </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
-                            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
-                            No equipment found matching your criteria.
-                        </td>
-                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -184,7 +177,13 @@
             paging: false,
             searching: false,
             info: false,
-            order: [[0, 'asc']]
+            order: [[0, 'asc']],
+            columnDefs: [
+                { orderable: false, targets: 7 }
+            ],
+            language: {
+                emptyTable: "No equipment assets found matching your criteria."
+            }
         });
     });
 </script>

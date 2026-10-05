@@ -10,7 +10,7 @@ from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from users.models import User
 from users.permissions import RoleRequiredMixin
 from .models import Equipment, Category, RentalRate
-from .forms import EquipmentForm, RentalRateFormSet
+from .forms import EquipmentForm, RentalRateCreateFormSet, RentalRateUpdateFormSet
 
 
 class EquipmentListView(RoleRequiredMixin, ListView):
@@ -112,9 +112,9 @@ class EquipmentCreateView(RoleRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
-            context['rate_formset'] = RentalRateFormSet(self.request.POST, prefix='rates')
+            context['rate_formset'] = RentalRateCreateFormSet(self.request.POST, prefix='rates')
         else:
-            context['rate_formset'] = RentalRateFormSet(prefix='rates')
+            context['rate_formset'] = RentalRateCreateFormSet(prefix='rates')
         context['is_edit'] = False
         return context
 
@@ -149,9 +149,9 @@ class EquipmentUpdateView(RoleRequiredMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
-            context['rate_formset'] = RentalRateFormSet(self.request.POST, instance=self.object, prefix='rates')
+            context['rate_formset'] = RentalRateUpdateFormSet(self.request.POST, instance=self.object, prefix='rates')
         else:
-            context['rate_formset'] = RentalRateFormSet(instance=self.object, prefix='rates')
+            context['rate_formset'] = RentalRateUpdateFormSet(instance=self.object, prefix='rates')
         context['is_edit'] = True
         return context
 

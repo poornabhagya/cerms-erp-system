@@ -90,7 +90,7 @@ class RentalRateForm(forms.ModelForm):
         }
 
 
-RentalRateFormSet = inlineformset_factory(
+RentalRateCreateFormSet = inlineformset_factory(
     Equipment,
     RentalRate,
     form=RentalRateForm,
@@ -107,3 +107,25 @@ RentalRateFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+RentalRateUpdateFormSet = inlineformset_factory(
+    Equipment,
+    RentalRate,
+    form=RentalRateForm,
+    fields=[
+        'daily_rate',
+        'hourly_rate',
+        'weekly_rate',
+        'monthly_rate',
+        'overtime_hourly_rate',
+        'minimum_rental_hours',
+        'effective_from',
+        'is_active',
+    ],
+    extra=0,
+    can_delete=True,
+)
+
+# Default alias for backward compatibility
+RentalRateFormSet = RentalRateCreateFormSet
+
