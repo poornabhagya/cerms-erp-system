@@ -144,9 +144,9 @@ jobs:
           done
 
           echo "=== 5. Full SSM Invocation Details ==="
-          aws ssm get-command-invocation \
+          aws ssm list-command-invocations \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
+            --details \
             --output json || true
 
           OUTPUT=$(aws ssm get-command-invocation \
