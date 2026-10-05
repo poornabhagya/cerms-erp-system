@@ -112,10 +112,15 @@ jobs:
       - name: Trigger SSM Deployment and Automated Smoke Test
         id: run-smoke-test
         run: |
-          echo "Generating bulletproof SSM deployment payload for Staging (${{ env.STAGING_INSTANCE_ID }})..."
+          echo "=== 1. Checking SSM Agent Status for Host (${{ env.STAGING_INSTANCE_ID }}) ==="
+          aws ssm describe-instance-information \
+            --filters "Key=InstanceIds,Values=${{ env.STAGING_INSTANCE_ID }}" \
+            --output table || true
+
+          echo "=== 2. Generating SSM deployment payload ==="
           python3 scripts/deploy_ssm.py "${{ env.STAGING_INSTANCE_ID }}" "staging"
 
-          echo "Dispatching AWS SSM command..."
+          echo "=== 3. Dispatching AWS SSM Command ==="
           COMMAND_ID=$(aws ssm send-command \
             --cli-input-json file://ssm_request.json \
             --query "Command.CommandId" \
@@ -123,20 +128,26 @@ jobs:
 
           echo "SSM Command dispatched with ID: $COMMAND_ID"
 
-          echo "Awaiting SSM Command Execution..."
-          for i in $(seq 1 45); do
+          echo "=== 4. Polling SSM Command Execution ==="
+          for i in $(seq 1 60); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
               --query "Status" \
               --output text 2>/dev/null || echo "Pending")
 
-            echo "SSM Status: $STATUS (polling $i/45)..."
+            echo "SSM Status: $STATUS (polling $i/60)..."
             if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
               break
             fi
             sleep 10
           done
+
+          echo "=== 5. Full SSM Invocation Details ==="
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
+            --output json || true
 
           OUTPUT=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \

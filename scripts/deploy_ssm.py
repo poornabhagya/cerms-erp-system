@@ -17,17 +17,16 @@ def generate_ssm_payload():
     ecr_registry = f"{account_id}.dkr.ecr.{region}.amazonaws.com"
     ecr_image = f"{ecr_registry}/cerms-web-repo:{image_tag}"
 
-    # Concise, zero-defect deployment commands (< 2KB to strictly adhere to AWS SSM limits)
-    commands = [
-        "#!/bin/bash",
+    # Remote script content written and executed cleanly with /bin/bash
+    script_lines = [
         "export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\"",
         "export HOME=/root",
         "mkdir -p /opt/cerms/certs /opt/cerms/scripts",
         "cd /opt/cerms",
-        f"echo '=== [1/7] Logging into Amazon ECR ==='",
+        "echo '=== [1/7] Logging into Amazon ECR ==='",
         f"export ECR_IMAGE='{ecr_image}'",
         f"aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin '{ecr_registry}' || true",
-        f"echo '=== [2/7] Pulling Container Image & Extracting Configs ==='",
+        "echo '=== [2/7] Pulling Container Image & Extracting Configs ==='",
         f"docker pull {ecr_image}",
         f"CID=$(docker create {ecr_image})",
         "docker cp ${CID}:/app/docker-compose.yml /opt/cerms/docker-compose.yml || true",
@@ -57,12 +56,17 @@ def generate_ssm_payload():
         "cat /opt/cerms/smoke_test_summary.json || echo '{\"total_tested\": 0, \"crashes\": 0}'"
     ]
 
+    remote_script_text = "\n".join(script_lines)
+
     payload = {
         "DocumentName": "AWS-RunShellScript",
         "InstanceIds": [instance_id],
         "Comment": f"CERMS CI/CD Deploy [{image_tag}] to {instance_id}",
         "Parameters": {
-            "commands": commands
+            "commands": [
+                f"cat << 'CERMS_DEPLOY_EOF' > /tmp/cerms_deploy.sh\n#!/bin/bash\nset -e\n{remote_script_text}\nCERMS_DEPLOY_EOF",
+                "/bin/bash /tmp/cerms_deploy.sh"
+            ]
         }
     }
 
@@ -74,4 +78,5 @@ def generate_ssm_payload():
 
 if __name__ == "__main__":
     generate_ssm_payload()
+
 
