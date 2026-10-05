@@ -57,7 +57,9 @@ def generate_ssm_payload():
         "InstanceIds": [instance_id],
         "Comment": f"CERMS Deploy [{image_tag}] to {instance_id}",
         "Parameters": {
-            "commands": commands
+            "commands": commands,
+            "workingDirectory": ["/tmp"],
+            "executionTimeout": ["1200"]
         }
     }
 

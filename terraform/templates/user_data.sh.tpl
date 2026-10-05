@@ -44,6 +44,18 @@ unzip -q awscliv2.zip
 rm -rf awscliv2.zip aws/
 
 echo "=========================================="
+echo "3.1. Installing Native AWS SSM Agent (.deb)"
+echo "=========================================="
+snap remove amazon-ssm-agent || true
+mkdir -p /tmp/ssm
+curl -s "https://s3.ap-south-1.amazonaws.com/amazon-ssm-ap-south-1/latest/debian_amd64/amazon-ssm-agent.deb" -o /tmp/ssm/amazon-ssm-agent.deb
+dpkg -i /tmp/ssm/amazon-ssm-agent.deb
+systemctl enable amazon-ssm-agent
+systemctl restart amazon-ssm-agent
+rm -rf /tmp/ssm
+
+
+echo "=========================================="
 echo "4. Installing Docker & Docker Compose v2"
 echo "=========================================="
 install -m 0755 -d /etc/apt/keyrings
