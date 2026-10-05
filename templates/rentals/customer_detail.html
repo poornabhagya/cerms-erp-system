@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}{{ customer.company_name }} — Customer Dossier{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'rentals:customer_list' %}">Customers</a></li>
+                <li class="breadcrumb-item active">{{ customer.customer_code }}</li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-0">{{ customer.company_name }} <span class="text-muted fw-normal">({{ customer.customer_code }})</span></h3>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'rentals:projectsite_create' %}?customer={{ customer.customer_code }}" class="btn btn-outline-success">
+            <i class="bi bi-geo-alt me-1"></i> Add Project Site
+        </a>
+        <a href="{% url 'rentals:customer_update' customer_code=customer.customer_code %}" class="btn btn-outline-primary">
+            <i class="bi bi-pencil me-1"></i> Edit Customer
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left Column: Customer Profile & Credit Telemetry -->
+    <div class="col-12 col-lg-5">
+        <!-- Account Overview Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-building text-primary me-2"></i> Corporate Account</h5>
+                <div>
+                    {% if customer.status == 'ACTIVE' %}
+                        <span class="badge bg-success fs-6">Active</span>
+                    {% elif customer.status == 'BLOCKED' %}
+                        <span class="badge bg-danger fs-6">Credit Hold</span>
+                    {% else %}
+                        <span class="badge bg-secondary fs-6">Inactive</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <div class="mb-3">
+                    <span class="text-muted small text-uppercase fw-bold d-block">Primary Contact</span>
+                    <span class="fw-semibold fs-5 text-dark">{{ customer.contact_person }}</span>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-md-6">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Phone</span>
+                        <span><i class="bi bi-telephone text-muted me-1"></i> {{ customer.phone }}</span>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Email</span>
+                        <span><i class="bi bi-envelope text-muted me-1"></i> {{ customer.email }}</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <span class="text-muted small text-uppercase fw-bold d-block">VAT / Tax Reg. No.</span>
+                    <span class="fw-semibold">{{ customer.vat_tax_number|default:"Not Registered" }}</span>
+                </div>
+                <div>
+                    <span class="text-muted small text-uppercase fw-bold d-block">Billing Address</span>
+                    <p class="text-secondary mb-0">{{ customer.billing_address }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Credit Limit & Telemetry Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-credit-card text-success me-2"></i> Credit Telemetry</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Credit Limit:</span>
+                    <span class="fw-bold fs-5 text-dark">Rs. {{ customer.credit_limit|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted small text-uppercase fw-bold">Outstanding Balance:</span>
+                    <span class="fw-bold fs-5 text-danger">Rs. {{ customer.current_outstanding_balance|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted small text-uppercase fw-bold">Available Credit:</span>
+                    <span class="fw-bold fs-5 text-success">Rs. {{ customer.available_credit|floatformat:2 }}</span>
+                </div>
+
+                <!-- Credit Progress Bar -->
+                <div class="progress mb-2" style="height: 10px;">
+                    <div class="progress-bar {% if credit_utilization_pct > 85 %}bg-danger{% elif credit_utilization_pct > 60 %}bg-warning{% else %}bg-success{% endif %}"
+                         role="progressbar"
+                         style="width: {{ credit_utilization_pct }}%;"
+                         aria-valuenow="{{ credit_utilization_pct }}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between small text-muted">
+                    <span>Utilization: {{ credit_utilization_pct }}%</span>
+                    <span>100% Limit</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Project Construction Sites -->
+    <div class="col-12 col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill text-danger me-2"></i> Registered Project Sites ({{ project_sites.count }})</h5>
+                <a href="{% url 'rentals:projectsite_create' %}?customer={{ customer.customer_code }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plus-circle me-1"></i> Add Site
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Project Code</th>
+                                <th>Project Name</th>
+                                <th>Site Address</th>
+                                <th>Resident Contact</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for site in project_sites %}
+                            <tr>
+                                <td class="fw-bold">{{ site.project_code }}</td>
+                                <td>
+                                    <div class="fw-semibold">{{ site.project_name }}</div>
+                                    {% if site.gps_coordinates %}
+                                        <small class="text-muted"><i class="bi bi-geo text-danger"></i> {{ site.gps_coordinates }}</small>
+                                    {% endif %}
+                                </td>
+                                <td><small class="text-muted">{{ site.site_address }}</small></td>
+                                <td>
+                                    {% if site.site_contact_person %}
+                                        <div>{{ site.site_contact_person }}</div>
+                                        <small class="text-muted">{{ site.site_contact_phone }}</small>
+                                    {% else %}
+                                        <span class="text-muted small">Not Assigned</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if site.status == 'ACTIVE' %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Completed</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'rentals:projectsite_update' project_code=site.project_code %}" class="btn btn-sm btn-outline-secondary" title="Edit Site">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5 text-muted">
+                                    <i class="bi bi-geo-alt fs-2 d-block mb-2 text-secondary"></i>
+                                    No construction project sites registered for this customer yet.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
