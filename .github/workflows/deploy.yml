@@ -67,6 +67,7 @@ jobs:
           NGINX_B64=$(base64 -w 0 nginx.conf)
           HEALTHCHECK_B64=$(base64 -w 0 scripts/healthcheck_harness.sh)
           SCAN_SCRIPT_B64=$(base64 -w 0 scan_urls.py)
+          ENV_B64=$(base64 -w 0 .env.example)
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ env.PROD_INSTANCE_ID }}" \
@@ -81,25 +82,8 @@ jobs:
               \"echo ${NGINX_B64} | base64 -d > /opt/cerms/nginx.conf\",
               \"echo ${HEALTHCHECK_B64} | base64 -d > /opt/cerms/scripts/healthcheck_harness.sh\",
               \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
+              \"echo ${ENV_B64} | base64 -d > /opt/cerms/.env\",
               \"chmod +x /opt/cerms/scripts/healthcheck_harness.sh\",
-              \"cat << 'ENVEOF' > /opt/cerms/.env
-DJANGO_SETTINGS_MODULE=cerms_project.settings.aws
-SECRET_KEY=cerms-prod-secret-key-${{ github.sha }}
-DEBUG=False
-ALLOWED_HOSTS=*
-TIME_ZONE=Asia/Colombo
-USE_TZ=True
-DB_NAME=cerms_db
-DB_USER=cerms_user
-DB_PASSWORD=cerms_secure_password_2026
-DB_HOST=mariadb
-DB_PORT=3306
-USE_CELERY=True
-USE_S3=False
-REDIS_URL=redis://redis:6379/0
-CELERY_BROKER_URL=redis://redis:6379/0
-CELERY_RESULT_BACKEND=redis://redis:6379/0
-ENVEOF\",
               \"export AWS_ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)\",
               \"export ECR_URL=\${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com\",
               \"export ECR_IMAGE=\${ECR_URL}/cerms-web-repo:latest\",
