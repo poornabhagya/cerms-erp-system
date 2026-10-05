@@ -4,8 +4,6 @@
 # Reference: docs/05_DEVOPS_AND_CLOUD.md, docs/21_DOCKER_AND_LOCAL_DEVELOPMENT.md
 # ==============================================================================
 
-version: "3.8"
-
 services:
   # 1. Database Service (MariaDB 10.11 LTS)
   mariadb:
