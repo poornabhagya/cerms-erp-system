@@ -121,6 +121,29 @@
                             </li>
                         </ul>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="lifecycleDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-file-earmark-text me-1"></i> Quotations & Contracts
+                        </a>
+                        <ul class="dropdown-menu shadow-sm" aria-labelledby="lifecycleDropdown">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'rentals:quotation_list' %}">
+                                    <i class="bi bi-file-earmark-text me-2 text-primary"></i> Quotation Register
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'rentals:contract_list' %}">
+                                    <i class="bi bi-shield-check me-2 text-success"></i> Active Rental Contracts
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'rentals:quotation_create' %}">
+                                    <i class="bi bi-plus-circle me-2 text-info"></i> New Quotation
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
                 </ul>
 
                 <div class="d-flex align-items-center gap-3">

@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Contract {{ contract.contract_no }} — CERMS{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'rentals:contract_list' %}" class="text-decoration-none">Rental Contracts</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ contract.contract_no }}</li>
+    </ol>
+</nav>
+
+<!-- Page Header & Action Controls -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <h3 class="fw-bold mb-0 text-dark">{{ contract.contract_no }}</h3>
+            {% if contract.status == 'ACTIVE' %}
+                <span class="badge bg-primary">Active / Reserved</span>
+            {% elif contract.status == 'DISPATCHED' %}
+                <span class="badge bg-warning text-dark">Dispatched in Transit</span>
+            {% elif contract.status == 'ON_RENT' %}
+                <span class="badge bg-success">On Rent / Active Field Operation</span>
+            {% elif contract.status == 'RETURNED' %}
+                <span class="badge bg-info text-dark">Returned / In Yard</span>
+            {% elif contract.status == 'CLOSED' %}
+                <span class="badge bg-dark">Closed</span>
+            {% endif %}
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+            Contract Period: {{ contract.contract_start_date|date:"M d, Y" }} &mdash; {{ contract.contract_end_date|date:"M d, Y" }}
+            | Created: {{ contract.created_at|date:"M d, Y" }}
+        </p>
+    </div>
+
+    <!-- Logistics Handover Buttons -->
+    <div class="d-flex flex-wrap gap-2">
+        {% if can_dispatch %}
+            <a href="{% url 'rentals:dispatch_create' contract_no=contract.contract_no %}" class="btn btn-primary shadow-sm">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Dispatch Equipment to Site
+            </a>
+        {% endif %}
+
+        {% if can_return and active_dispatch %}
+            <a href="{% url 'rentals:return_create' transaction_id=active_dispatch.transaction_id %}" class="btn btn-success shadow-sm">
+                <i class="bi bi-box-arrow-in-down-left me-1"></i> Process Equipment Return Check-in
+            </a>
+        {% endif %}
+
+        {% if contract.quotation %}
+            <a href="{% url 'rentals:quotation_detail' quotation_no=contract.quotation.quotation_no %}" class="btn btn-outline-secondary">
+                <i class="bi bi-file-earmark-text me-1"></i> View Quotation
+            </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Equipment Dossier Card -->
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Machine Asset</h5>
+                <span class="badge bg-dark font-monospace">{{ contract.equipment.asset_code }}</span>
+            </div>
+            <div class="card-body">
+                <h6 class="fw-bold text-dark mb-1">{{ contract.equipment.equipment_name }}</h6>
+                <div class="text-muted small mb-3">{{ contract.equipment.category.name|default:"Heavy Machinery" }} | Model: {{ contract.equipment.model_number|default:"Standard" }}</div>
+
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Current Hour Meter:</span>
+                        <strong class="font-monospace">{{ contract.equipment.current_hour_meter }} hrs</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Machine Status:</span>
+                        {% if contract.equipment.status == 'AVAILABLE' %}
+                            <span class="badge bg-success">Available</span>
+                        {% elif contract.equipment.status == 'RESERVED' %}
+                            <span class="badge bg-info text-dark">Reserved</span>
+                        {% elif contract.equipment.status == 'ON_RENT' %}
+                            <span class="badge bg-primary">On Rent</span>
+                        {% elif contract.equipment.status == 'MAINTENANCE' %}
+                            <span class="badge bg-warning text-dark">Maintenance</span>
+                        {% elif contract.equipment.status == 'BREAKDOWN' %}
+                            <span class="badge bg-danger">Breakdown</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ contract.equipment.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">Fuel Level:</span>
+                        <span class="badge bg-light text-dark border">{{ contract.equipment.fuel_level }}%</span>
+                    </div>
+                </div>
+
+                <div class="small">
+                    <div class="text-muted mb-1"><strong>Serial Number:</strong> {{ contract.equipment.serial_number|default:"N/A" }}</div>
+                    <div class="text-muted"><strong>Current Yard/Site:</strong> {{ contract.equipment.current_location|default:"Central Yard" }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client & Project Site Card -->
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-building text-primary me-2"></i> Client & Project Site</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <small class="text-muted text-uppercase fw-bold d-block">Client Organization</small>
+                    <a href="{% url 'rentals:customer_detail' customer_code=contract.customer.customer_code %}" class="fw-bold text-primary text-decoration-none">
+                        {{ contract.customer.company_name }}
+                    </a>
+                    <div class="small text-muted font-monospace">{{ contract.customer.customer_code }}</div>
+                    <div class="small text-muted mt-1"><i class="bi bi-telephone me-1"></i> {{ contract.customer.phone }}</div>
+                </div>
+                <hr>
+                <div>
+                    <small class="text-muted text-uppercase fw-bold d-block">Deployment Project Site</small>
+                    <div class="fw-semibold text-dark">{{ contract.project_site.project_name }}</div>
+                    <div class="small text-muted mb-2"><i class="bi bi-geo-alt me-1"></i> {{ contract.project_site.site_address }}</div>
+                    <div class="small"><i class="bi bi-person-badge me-1"></i> <strong>Site Supervisor:</strong> {{ contract.project_site.site_contact_person }} ({{ contract.project_site.site_contact_phone }})</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial & Legal Terms Card -->
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-cash-stack text-success me-2"></i> Commercial Terms</h5>
+            </div>
+            <div class="card-body">
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Agreed Tariff Rate:</span>
+                        <strong class="font-monospace text-dark">Rs. {{ contract.agreed_rate|floatformat:2 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Billing Invoicing Cycle:</span>
+                        <span class="badge bg-secondary">{{ contract.get_billing_cycle_display }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">Deposit Received:</span>
+                        <span class="badge bg-success font-monospace">Rs. {{ contract.deposit_paid|floatformat:2 }}</span>
+                    </div>
+                </div>
+
+                {% if contract.signed_contract_pdf %}
+                <div class="mb-2">
+                    <a href="{{ contract.signed_contract_pdf.url }}" target="_blank" class="btn btn-sm btn-outline-danger w-100">
+                        <i class="bi bi-file-earmark-pdf me-1"></i> View Signed Contract PDF
+                    </a>
+                </div>
+                {% else %}
+                <div class="text-muted small text-center p-2 bg-light rounded border">
+                    <i class="bi bi-info-circle me-1"></i> No signed PDF copy uploaded yet.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logistics Dispatch & Return Handover History -->
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history text-secondary me-2"></i> Equipment Physical Handover & Return History</h5>
+        <span class="badge bg-light text-dark border">{{ dispatch_logs.count }} Transaction Record(s)</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="ps-3">Transaction ID</th>
+                        <th>Dispatch Date & Time</th>
+                        <th>Dispatch Meter & Fuel</th>
+                        <th>Dispatch Officer</th>
+                        <th>Return Date & Time</th>
+                        <th>Return Meter & Fuel</th>
+                        <th>Hours & Excess</th>
+                        <th class="text-center">Inspection & Status</th>
+                        <th class="text-end pe-3">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in dispatch_logs %}
+                    <tr>
+                        <td class="ps-3 font-monospace fw-bold">{{ d.transaction_id }}</td>
+                        <td>
+                            <div>{{ d.dispatch_datetime|date:"Y-m-d H:i" }}</div>
+                        </td>
+                        <td>
+                            <div><i class="bi bi-speedometer2 me-1 text-primary"></i><strong>{{ d.dispatch_hour_meter }}</strong> hrs</div>
+                            <small class="text-muted"><i class="bi bi-fuel-pump me-1"></i>{{ d.dispatch_fuel_level }}% Fuel</small>
+                        </td>
+                        <td>
+                            <small class="fw-semibold">{{ d.dispatch_officer.get_full_name|default:d.dispatch_officer.username }}</small>
+                        </td>
+                        <td>
+                            {% if d.return_datetime %}
+                                <div>{{ d.return_datetime|date:"Y-m-d H:i" }}</div>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Active on site</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if d.return_datetime %}
+                                <div><i class="bi bi-speedometer2 me-1 text-success"></i><strong>{{ d.return_hour_meter }}</strong> hrs</div>
+                                <small class="text-muted"><i class="bi bi-fuel-pump me-1"></i>{{ d.return_fuel_level }}% Fuel</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if d.return_datetime %}
+                                <div><strong>{{ d.hours_operated }}</strong> total hrs</div>
+                                {% if d.excess_hours_calculated > 0 %}
+                                    <span class="badge bg-danger">+{{ d.excess_hours_calculated }} excess hrs</span>
+                                {% else %}
+                                    <small class="text-muted">No excess</small>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if d.return_datetime %}
+                                {% if d.damage_reported %}
+                                    <span class="badge bg-danger" title="{{ d.damage_notes }}">
+                                        <i class="bi bi-exclamation-triangle me-1"></i> Damage Reported
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle me-1"></i> Clean Return
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-primary">Operating in Field</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            {% if not d.return_datetime %}
+                            <a href="{% url 'rentals:return_create' transaction_id=d.transaction_id %}" class="btn btn-sm btn-success">
+                                <i class="bi bi-box-arrow-in-down-left me-1"></i> Check-in
+                            </a>
+                            {% else %}
+                            <span class="text-muted small"><i class="bi bi-check2-all text-success"></i> Completed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="bi bi-truck-flatbed fs-1 text-secondary d-block mb-2"></i>
+                            <p class="mb-2">No dispatch or return transactions recorded yet for this contract.</p>
+                            {% if can_dispatch %}
+                            <a href="{% url 'rentals:dispatch_create' contract_no=contract.contract_no %}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i> Log Initial Machine Dispatch
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

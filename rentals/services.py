@@ -1,35 +1,21 @@
+import uuid
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from .models import Customer
+from fleet.models import Equipment
+from .models import Customer, Quotation, RentalContract, DispatchReturn
 
 
 def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Decimal, raise_exception: bool = False) -> Dict[str, Any]:
     """
     Evaluates customer creditworthiness, operational standing, and outstanding balance against
     their approved credit ceiling.
-
-    Args:
-        customer (Customer): The customer entity requesting a new rental quotation.
-        new_quotation_amount (Decimal): The monetary value (LKR) of the prospective contract/quotation.
-        raise_exception (bool): When True, raises a Django ValidationError upon critical policy violation.
-
-    Returns:
-        dict: Detailed audit dictionary with approval status, remaining limits, and management flags:
-            {
-                'is_approved': bool,
-                'requires_management_override': bool,
-                'customer_code': str,
-                'customer_status': str,
-                'credit_limit': Decimal,
-                'current_outstanding_balance': Decimal,
-                'new_quotation_amount': Decimal,
-                'projected_total_exposure': Decimal,
-                'excess_amount': Decimal,
-                'message': str
-            }
     """
     amount = Decimal(str(new_quotation_amount))
     current_balance = Decimal(str(customer.current_outstanding_balance))
@@ -100,3 +86,158 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
         'remaining_available_margin': remaining_margin,
         'message': str(success_msg)
     }
+
+
+def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: str = 'MONTHLY') -> RentalContract:
+    """
+    Converts an accepted commercial quotation into a legally binding RentalContract.
+    Transitions machinery to RESERVED and audits status changes.
+
+    Step 4.2 State Machine Workflow:
+    1. Validates quotation status is ACCEPTED (or approved).
+    2. Creates RentalContract with agreed financial values.
+    3. Transitions Equipment.status -> RESERVED.
+    4. Marks Quotation.status -> CONVERTED.
+    """
+    with transaction.atomic():
+        quotation = Quotation.objects.select_for_update().get(quotation_no=quotation_id)
+
+        if hasattr(quotation, 'contract'):
+            raise ValidationError(f"Quotation '{quotation.quotation_no}' has already been converted to Contract '{quotation.contract.contract_no}'.")
+
+        if quotation.status not in [Quotation.Status.ACCEPTED, Quotation.Status.APPROVED_BY_MANAGEMENT]:
+            raise ValidationError(f"Cannot convert quotation with status '{quotation.get_status_display()}'. Must be in 'Accepted' or 'Approved' status.")
+
+        # Generate unique contract number
+        current_year = timezone.now().year
+        contract_count = RentalContract.objects.filter(contract_no__startswith=f"CNT-{current_year}-").count() + 1
+        contract_no = f"CNT-{current_year}-{contract_count:04d}"
+
+        # Create Contract
+        contract = RentalContract.objects.create(
+            contract_no=contract_no,
+            quotation=quotation,
+            customer=quotation.customer,
+            project_site=quotation.project_site,
+            equipment=quotation.equipment,
+            contract_start_date=quotation.start_date,
+            contract_end_date=quotation.end_date,
+            billing_cycle=billing_cycle,
+            agreed_rate=quotation.rate_applied,
+            deposit_paid=quotation.security_deposit_required,
+            status=RentalContract.Status.ACTIVE
+        )
+
+        # Transition Equipment to RESERVED
+        equipment = quotation.equipment
+        equipment.transition_status(Equipment.Status.RESERVED, user=user, notes=f"Reserved for Contract {contract.contract_no}")
+
+        # Mark Quotation as CONVERTED
+        quotation.status = Quotation.Status.CONVERTED
+        quotation.save(update_fields=['status', 'updated_at'])
+
+        return contract
+
+
+def process_equipment_dispatch(contract_id: str, dispatch_data: Dict[str, Any], user) -> DispatchReturn:
+    """
+    Executes machine mobilization handover.
+    
+    Step 4.2 State Machine Workflow:
+    1. Creates DispatchReturn record with opening hour-meter, fuel level, checklist.
+    2. Transitions Equipment.status -> ON_RENT.
+    3. Transitions RentalContract.status -> ON_RENT.
+    """
+    with transaction.atomic():
+        contract = RentalContract.objects.select_for_update().get(contract_no=contract_id)
+        equipment = contract.equipment
+
+        current_year = timezone.now().year
+        trx_count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1
+        transaction_id = f"TRX-{current_year}-{trx_count:04d}"
+
+        dispatch_datetime = dispatch_data.get('dispatch_datetime', timezone.now())
+        dispatch_hour_meter = Decimal(str(dispatch_data.get('dispatch_hour_meter', equipment.current_hour_meter)))
+        dispatch_fuel_level = Decimal(str(dispatch_data.get('dispatch_fuel_level', '100.00')))
+        dispatch_checklist = dispatch_data.get('dispatch_checklist', {})
+
+        # Create Dispatch record
+        dispatch_record = DispatchReturn.objects.create(
+            transaction_id=transaction_id,
+            contract=contract,
+            equipment=equipment,
+            dispatch_datetime=dispatch_datetime,
+            dispatch_hour_meter=dispatch_hour_meter,
+            dispatch_fuel_level=dispatch_fuel_level,
+            dispatch_officer=user,
+            dispatch_checklist=dispatch_checklist
+        )
+
+        # Update Equipment status and hour meter
+        equipment.current_hour_meter = dispatch_hour_meter
+        equipment.transition_status(Equipment.Status.ON_RENT, user=user, notes=f"Dispatched under Contract {contract.contract_no}")
+        equipment.save(update_fields=['current_hour_meter', 'updated_at'])
+
+        # Update Contract status
+        contract.status = RentalContract.Status.ON_RENT
+        contract.save(update_fields=['status', 'updated_at'])
+
+        return dispatch_record
+
+
+def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any], user) -> DispatchReturn:
+    """
+    Executes machine check-in and demobilization inspection.
+    
+    Step 4.2 State Machine Workflow:
+    1. Records closing hour meter, return fuel level, inspection checklist.
+    2. Computes excess hour meter usage against contract thresholds.
+    3. If damage reported: Transitions Equipment.status -> MAINTENANCE (or BREAKDOWN); else -> AVAILABLE.
+    4. Transitions RentalContract.status -> RETURNED.
+    5. Placeholder: Automatic finance invoice calculation trigger for Step 5.
+    """
+    with transaction.atomic():
+        dispatch_record = DispatchReturn.objects.select_for_update().get(transaction_id=dispatch_return_id)
+        contract = dispatch_record.contract
+        equipment = dispatch_record.equipment
+
+        return_datetime = return_data.get('return_datetime', timezone.now())
+        return_hour_meter = Decimal(str(return_data.get('return_hour_meter', equipment.current_hour_meter)))
+        return_fuel_level = Decimal(str(return_data.get('return_fuel_level', '100.00')))
+        return_checklist = return_data.get('return_checklist', {})
+        damage_reported = bool(return_data.get('damage_reported', False))
+        damage_notes = str(return_data.get('damage_notes', ''))
+
+        # Calculate excess hours: Duration days * standard 8 hrs/day
+        total_contract_days = contract.quotation.duration_days if contract.quotation else 1
+        standard_allowance_hours = Decimal(str(total_contract_days * 8))
+        actual_hours_used = max(Decimal('0.00'), return_hour_meter - dispatch_record.dispatch_hour_meter)
+        excess_hours = max(Decimal('0.00'), actual_hours_used - standard_allowance_hours)
+
+        # Update Dispatch & Return record
+        dispatch_record.return_datetime = return_datetime
+        dispatch_record.return_hour_meter = return_hour_meter
+        dispatch_record.return_fuel_level = return_fuel_level
+        dispatch_record.return_officer = user
+        dispatch_record.return_checklist = return_checklist
+        dispatch_record.damage_reported = damage_reported
+        dispatch_record.damage_notes = damage_notes
+        dispatch_record.excess_hours_calculated = excess_hours
+        dispatch_record.save()
+
+        # Update Equipment current meter reading
+        equipment.current_hour_meter = return_hour_meter
+        if damage_reported:
+            equipment.transition_status(Equipment.Status.MAINTENANCE, user=user, notes=f"Returned with damages from Contract {contract.contract_no}: {damage_notes}")
+        else:
+            equipment.transition_status(Equipment.Status.AVAILABLE, user=user, notes=f"Returned in good order from Contract {contract.contract_no}")
+        equipment.save(update_fields=['current_hour_meter', 'updated_at'])
+
+        # Update Contract status
+        contract.status = RentalContract.Status.RETURNED
+        contract.save(update_fields=['status', 'updated_at'])
+
+        # --- Automated Finance Integration Hook ---
+        # Note: Step 5 Billing Engine will invoke generate_final_rental_invoice(contract.contract_no, user)
+
+        return dispatch_record

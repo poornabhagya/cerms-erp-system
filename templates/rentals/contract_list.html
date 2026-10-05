@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Active Rental Contracts — CERMS{% endblock %}
+
+{% block extra_css %}
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<!-- Header & Action Controls -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <h3 class="fw-bold mb-1"><i class="bi bi-shield-check text-primary me-2"></i> Active Rental Contracts</h3>
+        <p class="text-muted small mb-0">Binding rental agreements, equipment mobilization records, and physical handover tracker.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'rentals:quotation_list' %}" class="btn btn-outline-secondary shadow-sm">
+            <i class="bi bi-file-earmark-text me-1"></i> Quotations Register
+        </a>
+    </div>
+</div>
+
+<!-- KPI Metric Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-primary">
+            <div class="text-muted small text-uppercase fw-bold">Total Contracts</div>
+            <div class="fs-4 fw-bold text-dark mt-1">{{ total_contracts }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-info">
+            <div class="text-muted small text-uppercase fw-bold">Active Agreement</div>
+            <div class="fs-4 fw-bold text-info mt-1">{{ active_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-success">
+            <div class="text-muted small text-uppercase fw-bold">On Rent (Field)</div>
+            <div class="fs-4 fw-bold text-success mt-1">{{ on_rent_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-warning">
+            <div class="text-muted small text-uppercase fw-bold">Returned</div>
+            <div class="fs-4 fw-bold text-warning mt-1">{{ returned_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-dark">
+            <div class="text-muted small text-uppercase fw-bold">Closed</div>
+            <div class="fs-4 fw-bold text-dark mt-1">{{ closed_count }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Lifecycle Filter Bar -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-12 col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Search Contract No, Customer, Machine Code, Project Site...">
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Contract Statuses</option>
+                    <option value="ACTIVE" {% if selected_status == 'ACTIVE' %}selected{% endif %}>Active / Reserved</option>
+                    <option value="DISPATCHED" {% if selected_status == 'DISPATCHED' %}selected{% endif %}>Dispatched in Transit</option>
+                    <option value="ON_RENT" {% if selected_status == 'ON_RENT' %}selected{% endif %}>On Rent / Field Operation</option>
+                    <option value="RETURNED" {% if selected_status == 'RETURNED' %}selected{% endif %}>Returned / Yard Check-in</option>
+                    <option value="CLOSED" {% if selected_status == 'CLOSED' %}selected{% endif %}>Closed</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-dark w-100"><i class="bi bi-funnel me-1"></i> Filter</button>
+                <a href="{% url 'rentals:contract_list' %}" class="btn btn-outline-secondary" title="Reset Filters"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Contracts Table Card -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped align-middle mb-0" id="contractTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th class="ps-3">Contract No</th>
+                        <th>Customer</th>
+                        <th>Equipment Machine</th>
+                        <th>Project Site</th>
+                        <th>Contract Period</th>
+                        <th>Agreed Tariff</th>
+                        <th>Deposit Paid</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contract_list %}
+                    <tr>
+                        <td class="ps-3 fw-bold font-monospace">
+                            <a href="{% url 'rentals:contract_detail' contract_no=c.contract_no %}" class="text-primary text-decoration-none">
+                                {{ c.contract_no }}
+                            </a>
+                        </td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ c.customer.company_name }}</div>
+                            <small class="text-muted font-monospace">{{ c.customer.customer_code }}</small>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">{{ c.equipment.equipment_name }}</div>
+                            <span class="badge bg-dark font-monospace">{{ c.equipment.asset_code }}</span>
+                        </td>
+                        <td>
+                            <div>{{ c.project_site.project_name }}</div>
+                            <small class="text-muted">{{ c.project_site.site_address|truncatechars:20 }}</small>
+                        </td>
+                        <td>
+                            <div><i class="bi bi-calendar3 me-1 text-muted"></i>{{ c.contract_start_date|date:"Y-m-d" }}</div>
+                            <small class="text-muted">to {{ c.contract_end_date|date:"Y-m-d" }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">Rs. {{ c.agreed_rate|floatformat:2 }} / {{ c.get_billing_cycle_display }}</span>
+                        </td>
+                        <td class="font-monospace fw-semibold text-success">
+                            Rs. {{ c.deposit_paid|floatformat:2 }}
+                        </td>
+                        <td class="text-center">
+                            {% if c.status == 'ACTIVE' %}
+                                <span class="badge bg-primary">Active</span>
+                            {% elif c.status == 'DISPATCHED' %}
+                                <span class="badge bg-warning text-dark">Dispatched</span>
+                            {% elif c.status == 'ON_RENT' %}
+                                <span class="badge bg-success">On Rent</span>
+                            {% elif c.status == 'RETURNED' %}
+                                <span class="badge bg-info text-dark">Returned</span>
+                            {% elif c.status == 'CLOSED' %}
+                                <span class="badge bg-dark">Closed</span>
+                            {% else %}
+                                <span class="badge bg-light text-dark border">{{ c.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            <a href="{% url 'rentals:contract_detail' contract_no=c.contract_no %}" class="btn btn-sm btn-outline-primary" title="Contract Dashboard">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="bi bi-file-earmark-check fs-1 text-secondary d-block mb-2"></i>
+                            <p class="mb-2">No rental contracts found matching your filters.</p>
+                            <small>Convert accepted commercial quotations to instantiate active contracts.</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="card-footer bg-white border-top d-flex justify-content-between align-items-center py-3">
+            <small class="text-muted">
+                Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ paginator.count }} contracts
+            </small>
+            <nav aria-label="Page navigation">
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">Previous</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_obj.number }} of {{ paginator.num_pages }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

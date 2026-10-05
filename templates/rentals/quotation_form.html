@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if is_edit %}Edit Quotation {{ form.instance.quotation_no }}{% else %}New Commercial Quotation{% endif %} — CERMS{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'rentals:quotation_list' %}" class="text-decoration-none">Quotations</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{% if is_edit %}Edit {{ form.instance.quotation_no }}{% else %}Create Quotation{% endif %}</li>
+    </ol>
+</nav>
+
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1">
+            <i class="bi bi-file-earmark-plus text-primary me-2"></i>
+            {% if is_edit %}Modify Quotation {{ form.instance.quotation_no }}{% else %}Dynamic Commercial Quote Builder{% endif %}
+        </h3>
+        <p class="text-muted small mb-0">Configure rental timelines, commercial tariffs, transport logistics, and calculate statutory taxes.</p>
+    </div>
+    <div>
+        <a href="{% url 'rentals:quotation_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Quotations
+        </a>
+    </div>
+</div>
+
+<form method="post" id="quotationForm">
+    {% csrf_token %}
+    
+    {% crispy form %}
+
+    <div class="card border-0 shadow-sm bg-light p-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                <i class="bi bi-calculator me-1 text-primary"></i> Live Tariff Calculator: Calculations update automatically upon date or rate changes.
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'rentals:quotation_list' %}" class="btn btn-outline-secondary px-4">Cancel</a>
+                <button type="submit" class="btn btn-primary px-4 fw-semibold shadow-sm">
+                    <i class="bi bi-check2-circle me-1"></i> {% if is_edit %}Save Quotation Changes{% else %}Generate Commercial Quotation{% endif %}
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const startDateInput = document.getElementById('id_start_date');
+    const endDateInput = document.getElementById('id_end_date');
+    const rateInput = document.getElementById('id_rate_applied');
+    const transportInput = document.getElementById('id_transport_cost');
+    const discountInput = document.getElementById('id_discount_pct');
+    const subtotalInput = document.getElementById('id_subtotal');
+    const taxInput = document.getElementById('id_tax_amount');
+    const grandTotalInput = document.getElementById('id_grand_total');
+
+    function calculateTotals() {
+        if (!startDateInput || !endDateInput || !rateInput) return;
+
+        const start = new Date(startDateInput.value);
+        const end = new Date(endDateInput.value);
+        let days = 1;
+
+        if (startDateInput.value && endDateInput.value && end >= start) {
+            const diffTime = Math.abs(end - start);
+            days = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+        }
+
+        const rate = parseFloat(rateInput.value) || 0;
+        const transport = parseFloat(transportInput.value) || 0;
+        const discountPct = parseFloat(discountInput.value) || 0;
+
+        const baseRental = days * rate;
+        const discountAmount = baseRental * (discountPct / 100);
+        const subtotal = Math.max(0, (baseRental - discountAmount) + transport);
+        
+        // Statutory 18% VAT Standard
+        const vatRate = 0.18;
+        const tax = subtotal * vatRate;
+        const grandTotal = subtotal + tax;
+
+        if (subtotalInput && !subtotalInput.value) {
+            subtotalInput.value = subtotal.toFixed(2);
+        }
+        if (taxInput && !taxInput.value) {
+            taxInput.value = tax.toFixed(2);
+        }
+        if (grandTotalInput && !grandTotalInput.value) {
+            grandTotalInput.value = grandTotal.toFixed(2);
+        }
+    }
+
+    [startDateInput, endDateInput, rateInput, transportInput, discountInput].forEach(function(elem) {
+        if (elem) {
+            elem.addEventListener('input', calculateTotals);
+            elem.addEventListener('change', calculateTotals);
+        }
+    });
+});
+</script>
+{% endblock %}

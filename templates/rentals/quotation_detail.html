@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block title %}Quotation {{ quotation.quotation_no }} — CERMS{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'rentals:quotation_list' %}" class="text-decoration-none">Quotations</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ quotation.quotation_no }}</li>
+    </ol>
+</nav>
+
+<!-- Page Header & Action Controls -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <h3 class="fw-bold mb-0 text-dark">{{ quotation.quotation_no }}</h3>
+            {% if quotation.status == 'DRAFT' %}
+                <span class="badge bg-secondary">Draft</span>
+            {% elif quotation.status == 'PENDING_INTERNAL_APPROVAL' %}
+                <span class="badge bg-warning text-dark">Pending Management Approval</span>
+            {% elif quotation.status == 'APPROVED_BY_MANAGEMENT' %}
+                <span class="badge bg-info text-dark">Approved by Management</span>
+            {% elif quotation.status == 'SENT_TO_CUSTOMER' %}
+                <span class="badge bg-primary">Sent to Customer</span>
+            {% elif quotation.status == 'ACCEPTED' %}
+                <span class="badge bg-success">Accepted by Customer</span>
+            {% elif quotation.status == 'REJECTED' %}
+                <span class="badge bg-danger">Rejected</span>
+            {% elif quotation.status == 'CONVERTED' %}
+                <span class="badge bg-dark">Converted to Contract</span>
+            {% endif %}
+        </div>
+        <p class="text-muted small mb-0 mt-1">Generated on {{ quotation.created_at|date:"M d, Y H:i" }} | Last revised {{ quotation.updated_at|date:"M d, Y H:i" }}</p>
+    </div>
+
+    <!-- Action Workflow Buttons -->
+    <div class="d-flex flex-wrap gap-2">
+        {% if quotation.status == 'DRAFT' %}
+            <a href="{% url 'rentals:quotation_update' quotation_no=quotation.quotation_no %}" class="btn btn-outline-secondary">
+                <i class="bi bi-pencil me-1"></i> Edit Quote
+            </a>
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="submit_for_approval">
+                <button type="submit" class="btn btn-warning">
+                    <i class="bi bi-send me-1"></i> Submit for Approval
+                </button>
+            </form>
+        {% elif quotation.status == 'PENDING_INTERNAL_APPROVAL' %}
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="approve">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-circle me-1"></i> Approve Quotation
+                </button>
+            </form>
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject">
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Are you sure you want to reject this quotation?');">
+                    <i class="bi bi-x-circle me-1"></i> Reject
+                </button>
+            </form>
+        {% elif quotation.status == 'APPROVED_BY_MANAGEMENT' %}
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="send_to_customer">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-envelope-check me-1"></i> Mark as Sent to Customer
+                </button>
+            </form>
+        {% elif quotation.status == 'SENT_TO_CUSTOMER' %}
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="mark_accepted">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-hand-thumbs-up me-1"></i> Customer Accepted
+                </button>
+            </form>
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject">
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Are you sure you want to mark this quotation as rejected?');">
+                    <i class="bi bi-x-circle me-1"></i> Customer Rejected
+                </button>
+            </form>
+        {% endif %}
+
+        {% if can_convert %}
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#convertContractModal">
+                <i class="bi bi-shield-plus me-1"></i> Convert to Contract
+            </button>
+        {% endif %}
+
+        {% if has_contract %}
+            <a href="{% url 'rentals:contract_detail' contract_no=quotation.contract.contract_no %}" class="btn btn-dark">
+                <i class="bi bi-shield-check me-1"></i> View Binding Contract ({{ quotation.contract.contract_no }})
+            </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Real-time Credit Evaluation Banner -->
+{% if credit_check %}
+<div class="row mb-4">
+    <div class="col-12">
+        {% if credit_check.allowed %}
+        <div class="alert alert-success d-flex align-items-center mb-0 shadow-sm border-0" role="alert">
+            <i class="bi bi-shield-check-fill fs-3 text-success me-3"></i>
+            <div>
+                <strong class="d-block">Credit Limit Verification Passed</strong>
+                <small class="text-muted">{{ credit_check.message }} (Available Facility: Rs. {{ credit_check.available_credit|floatformat:2 }})</small>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-danger d-flex align-items-center mb-0 shadow-sm border-0" role="alert">
+            <i class="bi bi-shield-x-fill fs-3 text-danger me-3"></i>
+            <div>
+                <strong class="d-block">Credit Exposure Alert</strong>
+                <small>{{ credit_check.message }} (Available: Rs. {{ credit_check.available_credit|floatformat:2 }} vs Quote Grand Total: Rs. {{ quotation.grand_total_amount|floatformat:2 }})</small>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- Left Column: Scope, Pricing & Financial Breakdown -->
+    <div class="col-12 col-lg-8">
+        <!-- Rental Period & Machine Scope Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Machine & Schedule Specification</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <div class="p-3 bg-light rounded-3 border">
+                            <small class="text-muted text-uppercase fw-bold d-block mb-1">Equipment Asset</small>
+                            <h6 class="fw-bold text-dark mb-1">{{ quotation.equipment.equipment_name }}</h6>
+                            <div class="d-flex align-items-center gap-2 mt-2">
+                                <span class="badge bg-dark font-monospace">{{ quotation.equipment.asset_code }}</span>
+                                <span class="badge bg-secondary">{{ quotation.equipment.category.name|default:"General Fleet" }}</span>
+                                <span class="badge bg-info text-dark">Meter: {{ quotation.equipment.current_hour_meter }} hrs</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="p-3 bg-light rounded-3 border">
+                            <small class="text-muted text-uppercase fw-bold d-block mb-1">Rental Timeline</small>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-bold text-dark">{{ quotation.start_date|date:"M d, Y" }}</div>
+                                    <small class="text-muted">Mobilization Date</small>
+                                </div>
+                                <i class="bi bi-arrow-right text-muted fs-5"></i>
+                                <div>
+                                    <div class="fw-bold text-dark">{{ quotation.end_date|date:"M d, Y" }}</div>
+                                    <small class="text-muted">Estimated Return</small>
+                                </div>
+                            </div>
+                            <div class="mt-2 text-primary fw-semibold small">
+                                <i class="bi bi-clock-history me-1"></i> Estimated Duration: {{ quotation.rental_duration_days }} Days
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Commercial Pricing & Financial Breakdown Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-receipt text-success me-2"></i> Commercial Pricing Breakdown</h5>
+            </div>
+            <div class="card-body p-0">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Line Item / Commercial Charge</th>
+                            <th>Basis / Rate</th>
+                            <th class="text-end pe-4">Amount (LKR)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="ps-4">
+                                <div class="fw-semibold">Base Machinery Rental Tariff</div>
+                                <small class="text-muted">{{ quotation.rental_duration_days }} Days @ {{ quotation.get_rate_type_display }} Billing</small>
+                            </td>
+                            <td>
+                                <span class="font-monospace">Rs. {{ quotation.rate_applied|floatformat:2 }}</span>
+                            </td>
+                            <td class="text-end pe-4 font-monospace fw-semibold">
+                                Rs. {{ quotation.subtotal_amount|floatformat:2 }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="ps-4">
+                                <div class="fw-semibold">Estimated Transport & Mobilization</div>
+                                <small class="text-muted">Round-trip low-bed logistics to project site</small>
+                            </td>
+                            <td>—</td>
+                            <td class="text-end pe-4 font-monospace">
+                                Rs. {{ quotation.estimated_transport_cost|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% if quotation.discount_percentage > 0 %}
+                        <tr class="table-warning bg-opacity-25">
+                            <td class="ps-4 text-danger">
+                                <div class="fw-semibold">Special Commercial Discount ({{ quotation.discount_percentage }}%)</div>
+                            </td>
+                            <td>—</td>
+                            <td class="text-end pe-4 font-monospace text-danger">
+                                Included in subtotal
+                            </td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td class="ps-4">
+                                <div class="fw-semibold">Applicable Value Added Tax (VAT)</div>
+                                <small class="text-muted">Statutory Corporate Tax Rate</small>
+                            </td>
+                            <td>—</td>
+                            <td class="text-end pe-4 font-monospace">
+                                Rs. {{ quotation.total_tax_amount|floatformat:2 }}
+                            </td>
+                        </tr>
+                        <tr class="table-dark">
+                            <td class="ps-4 fw-bold fs-6">Grand Total Commercial Value</td>
+                            <td></td>
+                            <td class="text-end pe-4 font-monospace fw-bold fs-5 text-warning">
+                                Rs. {{ quotation.grand_total_amount|floatformat:2 }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-light p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-muted small text-uppercase fw-bold">Security Deposit Mandatory:</span>
+                        <span class="fw-bold text-dark font-monospace ms-2">Rs. {{ quotation.security_deposit_required|floatformat:2 }}</span>
+                    </div>
+                    <span class="badge bg-secondary">All Rates in Sri Lankan Rupees (LKR)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Customer & Project Site Dossier & Approvals -->
+    <div class="col-12 col-lg-4">
+        <!-- Customer & Site Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-building text-primary me-2"></i> Client & Destination</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <small class="text-muted text-uppercase fw-bold d-block">Client Organization</small>
+                    <a href="{% url 'rentals:customer_detail' customer_code=quotation.customer.customer_code %}" class="fw-bold text-primary text-decoration-none fs-6">
+                        {{ quotation.customer.company_name }}
+                    </a>
+                    <div class="small text-muted font-monospace">{{ quotation.customer.customer_code }}</div>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted text-uppercase fw-bold d-block">Contact & VAT</small>
+                    <div class="small"><i class="bi bi-person me-1"></i> {{ quotation.customer.contact_person }}</div>
+                    <div class="small"><i class="bi bi-telephone me-1"></i> {{ quotation.customer.phone }}</div>
+                    <div class="small"><i class="bi bi-file-text me-1"></i> VAT: {{ quotation.customer.vat_tax_number|default:"N/A" }}</div>
+                </div>
+                <hr>
+                <div>
+                    <small class="text-muted text-uppercase fw-bold d-block">Deployment Project Site</small>
+                    <div class="fw-semibold text-dark">{{ quotation.project_site.project_name }}</div>
+                    <div class="small text-muted mb-2"><i class="bi bi-geo-alt me-1"></i> {{ quotation.project_site.site_address }}</div>
+                    <div class="small"><i class="bi bi-person-badge me-1"></i> Supervisor: {{ quotation.project_site.site_contact_person }} ({{ quotation.project_site.site_contact_phone }})</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Approval & Governance Audit Trail -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history text-secondary me-2"></i> Audit & Approvals</h5>
+            </div>
+            <div class="card-body">
+                <div class="timeline small">
+                    <div class="mb-3">
+                        <span class="text-muted d-block">Created by System</span>
+                        <strong>{{ quotation.created_at|date:"M d, Y H:i" }}</strong>
+                    </div>
+                    {% if quotation.approved_by %}
+                    <div class="mb-3 text-success">
+                        <span class="text-muted d-block">Approved by Management</span>
+                        <strong><i class="bi bi-check-circle-fill me-1"></i> {{ quotation.approved_by.get_full_name|default:quotation.approved_by.username }}</strong>
+                        <div class="text-muted">{{ quotation.approval_date|date:"M d, Y H:i" }}</div>
+                    </div>
+                    {% else %}
+                    <div class="text-muted">
+                        <i class="bi bi-dash-circle me-1"></i> Management approval pending
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Convert to Contract Modal -->
+{% if can_convert %}
+<div class="modal fade" id="convertContractModal" tabindex="-1" aria-labelledby="convertContractModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'rentals:quotation_transition' quotation_no=quotation.quotation_no %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="convert_to_contract">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="convertContractModalLabel"><i class="bi bi-shield-plus text-primary me-2"></i> Convert Quotation to Rental Contract</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">
+                        Converting this quotation will generate an active <strong>RentalContract</strong>, bind the agreed financial rates, transition the equipment status to <strong>RESERVED</strong>, and update the quotation status to <strong>CONVERTED</strong>.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Contract Billing Cycle</label>
+                        <select name="billing_cycle" class="form-select" required>
+                            <option value="DAILY" {% if quotation.rate_type == 'DAILY' %}selected{% endif %}>Daily Invoicing</option>
+                            <option value="WEEKLY" {% if quotation.rate_type == 'WEEKLY' %}selected{% endif %}>Weekly Invoicing</option>
+                            <option value="MONTHLY" {% if quotation.rate_type == 'MONTHLY' %}selected{% endif %}>Monthly Invoicing</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info py-2 small mb-0">
+                        <i class="bi bi-info-circle me-1"></i> Machine <strong>{{ quotation.equipment.asset_code }}</strong> will be locked for other bookings during this period.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2-circle me-1"></i> Confirm & Generate Contract
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

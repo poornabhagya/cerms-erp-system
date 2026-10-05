@@ -1,15 +1,29 @@
 from decimal import Decimal
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum, Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy, reverse
+from django.utils import timezone
+from django.views import View
 from django.views.generic import ListView, DetailView, CreateView, UpdateView
 
 from users.models import User
 from users.permissions import RoleRequiredMixin
-from .models import Customer, ProjectSite
-from .forms import CustomerForm, ProjectSiteForm
+from fleet.models import Equipment
+from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
+from .forms import CustomerForm, ProjectSiteForm, QuotationForm, RentalContractForm, DispatchForm, ReturnForm
+from .services import (
+    validate_customer_credit_limit,
+    convert_quotation_to_contract,
+    process_equipment_dispatch,
+    process_equipment_return
+)
 
+
+# ==============================================================================
+# 1. CUSTOMER & PROJECT SITE VIEWS
+# ==============================================================================
 
 class CustomerListView(RoleRequiredMixin, ListView):
     """
@@ -93,6 +107,10 @@ class CustomerDetailView(RoleRequiredMixin, DetailView):
 
         # Linked Project Sites
         context['project_sites'] = customer.project_sites.all().order_by('-created_at')
+
+        # Quotations & Contracts
+        context['recent_quotations'] = customer.quotations.select_related('equipment', 'project_site').order_by('-created_at')[:5]
+        context['active_contracts'] = customer.contracts.select_related('equipment', 'project_site').order_by('-contract_start_date')[:5]
 
         # Credit utilization percentage
         if customer.credit_limit > Decimal('0.00'):
@@ -263,3 +281,389 @@ class ProjectSiteUpdateView(RoleRequiredMixin, UpdateView):
         self.object = form.save()
         messages.success(self.request, f"Project Site '{self.object.project_name}' updated successfully.")
         return redirect('rentals:site_list')
+
+
+# ==============================================================================
+# 2. QUOTATION MANAGEMENT VIEWS
+# ==============================================================================
+
+class QuotationListView(RoleRequiredMixin, ListView):
+    """
+    Quotation register displaying commercial offers, lifecycle status tabs, and PDF export triggers.
+    """
+    model = Quotation
+    template_name = 'rentals/quotation_list.html'
+    context_object_name = 'quotation_list'
+    paginate_by = 25
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_queryset(self):
+        queryset = Quotation.objects.select_related('customer', 'project_site', 'equipment', 'approved_by')
+        search_query = self.request.GET.get('q', '').strip()
+        status_filter = self.request.GET.get('status', '').strip()
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(quotation_no__icontains=search_query) |
+                Q(customer__company_name__icontains=search_query) |
+                Q(equipment__asset_code__icontains=search_query) |
+                Q(equipment__equipment_name__icontains=search_query)
+            )
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        all_quotations = Quotation.objects.all()
+
+        context['selected_status'] = self.request.GET.get('status', '')
+        context['search_query'] = self.request.GET.get('q', '')
+
+        # KPI Counters
+        context['total_quotations'] = all_quotations.count()
+        context['draft_count'] = all_quotations.filter(status=Quotation.Status.DRAFT).count()
+        context['pending_approval_count'] = all_quotations.filter(status=Quotation.Status.PENDING_INTERNAL_APPROVAL).count()
+        context['approved_count'] = all_quotations.filter(status=Quotation.Status.APPROVED_BY_MANAGEMENT).count()
+        context['accepted_count'] = all_quotations.filter(status=Quotation.Status.ACCEPTED).count()
+        context['converted_count'] = all_quotations.filter(status=Quotation.Status.CONVERTED).count()
+
+        return context
+
+
+class QuotationDetailView(RoleRequiredMixin, DetailView):
+    """
+    Quotation dossier displaying itemized pricing, credit risk evaluation, and managerial approval controls.
+    """
+    model = Quotation
+    template_name = 'rentals/quotation_detail.html'
+    context_object_name = 'quotation'
+    pk_url_kwarg = 'quotation_no'
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        quotation = self.object
+
+        # Real-time credit validation check
+        context['credit_check'] = validate_customer_credit_limit(quotation.customer, quotation.grand_total_amount)
+        context['can_convert'] = (quotation.status in [Quotation.Status.ACCEPTED, Quotation.Status.APPROVED_BY_MANAGEMENT]) and not hasattr(quotation, 'contract')
+        context['has_contract'] = hasattr(quotation, 'contract')
+
+        return context
+
+
+class QuotationCreateView(RoleRequiredMixin, CreateView):
+    """View to build and issue a new commercial Quotation."""
+    model = Quotation
+    form_class = QuotationForm
+    template_name = 'rentals/quotation_form.html'
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        current_year = timezone.now().year
+        count = Quotation.objects.filter(quotation_no__startswith=f"QT-{current_year}-").count() + 1
+        initial['quotation_no'] = f"QT-{current_year}-{count:04d}"
+        initial['start_date'] = timezone.now().date()
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_edit'] = False
+        return context
+
+    def form_valid(self, form):
+        self.object = form.save()
+        messages.success(self.request, f"Quotation '{self.object.quotation_no}' generated successfully.")
+        return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+
+
+class QuotationUpdateView(RoleRequiredMixin, UpdateView):
+    """View to modify an existing Quotation."""
+    model = Quotation
+    form_class = QuotationForm
+    template_name = 'rentals/quotation_form.html'
+    pk_url_kwarg = 'quotation_no'
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_edit'] = True
+        return context
+
+    def form_valid(self, form):
+        self.object = form.save()
+        messages.success(self.request, f"Quotation '{self.object.quotation_no}' updated successfully.")
+        return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+
+
+class QuotationStatusTransitionView(RoleRequiredMixin, View):
+    """
+    Handles lifecycle status transitions (Submit for Approval, Approve, Send, Accept, Reject, Convert).
+    """
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def post(self, request, quotation_no):
+        quotation = get_object_or_404(Quotation, quotation_no=quotation_no)
+        action = request.POST.get('action')
+
+        try:
+            if action == 'submit_for_approval':
+                quotation.status = Quotation.Status.PENDING_INTERNAL_APPROVAL
+                quotation.save(update_fields=['status', 'updated_at'])
+                messages.info(request, f"Quotation '{quotation.quotation_no}' submitted for management approval.")
+
+            elif action == 'approve':
+                if request.user.role not in [User.Role.MANAGEMENT, User.Role.ADMINISTRATOR]:
+                    messages.error(request, "Only Management or Administrators can approve commercial quotations.")
+                    return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
+                quotation.status = Quotation.Status.APPROVED_BY_MANAGEMENT
+                quotation.approved_by = request.user
+                quotation.approval_date = timezone.now()
+                quotation.save(update_fields=['status', 'approved_by', 'approval_date', 'updated_at'])
+                messages.success(request, f"Quotation '{quotation.quotation_no}' approved by Management.")
+
+            elif action == 'send_to_customer':
+                quotation.status = Quotation.Status.SENT_TO_CUSTOMER
+                quotation.save(update_fields=['status', 'updated_at'])
+                messages.success(request, f"Quotation '{quotation.quotation_no}' marked as Sent to Customer.")
+
+            elif action == 'mark_accepted':
+                quotation.status = Quotation.Status.ACCEPTED
+                quotation.save(update_fields=['status', 'updated_at'])
+                messages.success(request, f"Quotation '{quotation.quotation_no}' accepted by Customer.")
+
+            elif action == 'reject':
+                quotation.status = Quotation.Status.REJECTED
+                quotation.save(update_fields=['status', 'updated_at'])
+                messages.warning(request, f"Quotation '{quotation.quotation_no}' marked as Rejected.")
+
+            elif action == 'convert_to_contract':
+                billing_cycle = request.POST.get('billing_cycle', 'MONTHLY')
+                contract = convert_quotation_to_contract(quotation.quotation_no, user=request.user, billing_cycle=billing_cycle)
+                messages.success(request, f"Quotation '{quotation.quotation_no}' successfully converted to Contract '{contract.contract_no}'. Equipment reserved.")
+                return redirect('rentals:contract_detail', contract_no=contract.contract_no)
+
+        except ValidationError as e:
+            messages.error(request, str(e))
+
+        return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
+
+
+# ==============================================================================
+# 3. RENTAL CONTRACT & LOGISTICS (DISPATCH / RETURN) VIEWS
+# ==============================================================================
+
+class RentalContractListView(RoleRequiredMixin, ListView):
+    """
+    Active rental contract registry displaying machine assignments, billing cycles, and return dates.
+    """
+    model = RentalContract
+    template_name = 'rentals/contract_list.html'
+    context_object_name = 'contract_list'
+    paginate_by = 25
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_queryset(self):
+        queryset = RentalContract.objects.select_related('customer', 'project_site', 'equipment', 'quotation')
+        search_query = self.request.GET.get('q', '').strip()
+        status_filter = self.request.GET.get('status', '').strip()
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(contract_no__icontains=search_query) |
+                Q(customer__company_name__icontains=search_query) |
+                Q(equipment__asset_code__icontains=search_query) |
+                Q(equipment__equipment_name__icontains=search_query) |
+                Q(project_site__project_name__icontains=search_query)
+            )
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        all_contracts = RentalContract.objects.all()
+
+        context['selected_status'] = self.request.GET.get('status', '')
+        context['search_query'] = self.request.GET.get('q', '')
+
+        # KPI Counters
+        context['total_contracts'] = all_contracts.count()
+        context['active_count'] = all_contracts.filter(status=RentalContract.Status.ACTIVE).count()
+        context['on_rent_count'] = all_contracts.filter(status=RentalContract.Status.ON_RENT).count()
+        context['returned_count'] = all_contracts.filter(status=RentalContract.Status.RETURNED).count()
+        context['closed_count'] = all_contracts.filter(status=RentalContract.Status.CLOSED).count()
+
+        return context
+
+
+class RentalContractDetailView(RoleRequiredMixin, DetailView):
+    """
+    Rental contract dashboard displaying agreed rates, physical handover history, and return actions.
+    """
+    model = RentalContract
+    template_name = 'rentals/contract_detail.html'
+    context_object_name = 'contract'
+    pk_url_kwarg = 'contract_no'
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        contract = self.object
+
+        context['dispatch_logs'] = contract.dispatch_returns.select_related('dispatch_officer', 'return_officer').order_by('-dispatch_datetime')
+        context['active_dispatch'] = contract.dispatch_returns.filter(return_datetime__isnull=True).first()
+        context['can_dispatch'] = contract.status in [RentalContract.Status.ACTIVE, RentalContract.Status.DISPATCHED]
+        context['can_return'] = contract.status == RentalContract.Status.ON_RENT and context['active_dispatch'] is not None
+
+        return context
+
+
+class DispatchCreateView(RoleRequiredMixin, CreateView):
+    """
+    View for yard officers to log equipment mobilization departure and initial telemetry.
+    """
+    model = DispatchReturn
+    form_class = DispatchForm
+    template_name = 'rentals/dispatch_form.html'
+    allowed_roles = (
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        contract_no = self.kwargs.get('contract_no')
+        if contract_no:
+            contract = get_object_or_404(RentalContract, contract_no=contract_no)
+            initial['contract'] = contract
+            initial['equipment'] = contract.equipment
+            initial['dispatch_hour_meter'] = contract.equipment.current_hour_meter
+            initial['dispatch_fuel_level'] = Decimal('100.00')
+            initial['dispatch_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
+
+            current_year = timezone.now().year
+            count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1
+            initial['transaction_id'] = f"TRX-{current_year}-{count:04d}"
+
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        contract_no = self.kwargs.get('contract_no')
+        context['contract'] = get_object_or_404(RentalContract, contract_no=contract_no)
+        return context
+
+    def form_valid(self, form):
+        contract_no = self.kwargs.get('contract_no')
+        contract = get_object_or_404(RentalContract, contract_no=contract_no)
+
+        dispatch_data = {
+            'dispatch_datetime': form.cleaned_data['dispatch_datetime'],
+            'dispatch_hour_meter': form.cleaned_data['dispatch_hour_meter'],
+            'dispatch_fuel_level': form.cleaned_data['dispatch_fuel_level'],
+            'dispatch_checklist': form.cleaned_data['dispatch_checklist'],
+        }
+
+        try:
+            record = process_equipment_dispatch(contract.contract_no, dispatch_data, user=self.request.user)
+            messages.success(self.request, f"Equipment '{contract.equipment.asset_code}' successfully dispatched under Transaction {record.transaction_id}.")
+            return redirect('rentals:contract_detail', contract_no=contract.contract_no)
+        except ValidationError as e:
+            messages.error(self.request, str(e))
+            return self.form_invalid(form)
+
+
+class ReturnCreateView(RoleRequiredMixin, UpdateView):
+    """
+    View for yard officers to log equipment return check-in, compute excess hours, and evaluate damages.
+    """
+    model = DispatchReturn
+    form_class = ReturnForm
+    template_name = 'rentals/return_form.html'
+    pk_url_kwarg = 'transaction_id'
+    allowed_roles = (
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial['return_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
+        initial['return_hour_meter'] = self.object.equipment.current_hour_meter
+        initial['return_fuel_level'] = Decimal('100.00')
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['dispatch_record'] = self.object
+        context['contract'] = self.object.contract
+        return context
+
+    def form_valid(self, form):
+        return_data = {
+            'return_datetime': form.cleaned_data['return_datetime'],
+            'return_hour_meter': form.cleaned_data['return_hour_meter'],
+            'return_fuel_level': form.cleaned_data['return_fuel_level'],
+            'damage_reported': form.cleaned_data['damage_reported'],
+            'damage_notes': form.cleaned_data['damage_notes'],
+            'return_checklist': form.cleaned_data['return_checklist'],
+        }
+
+        try:
+            record = process_equipment_return(self.object.transaction_id, return_data, user=self.request.user)
+            messages.success(
+                self.request,
+                f"Equipment '{record.equipment.asset_code}' returned successfully. "
+                f"Total hours: {record.hours_operated} hrs (Excess: {record.excess_hours_calculated} hrs)."
+            )
+            return redirect('rentals:contract_detail', contract_no=record.contract.contract_no)
+        except ValidationError as e:
+            messages.error(self.request, str(e))
+            return self.form_invalid(form)

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Log Equipment Return Check-in — {{ dispatch_record.transaction_id }} — CERMS{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'rentals:contract_list' %}" class="text-decoration-none">Contracts</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'rentals:contract_detail' contract_no=contract.contract_no %}" class="text-decoration-none">{{ contract.contract_no }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Return Check-in ({{ dispatch_record.transaction_id }})</li>
+    </ol>
+</nav>
+
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1">
+            <i class="bi bi-box-arrow-in-down-left text-success me-2"></i>
+            Equipment Return Check-in & Post-Rental Inspection
+        </h3>
+        <p class="text-muted small mb-0">Record closing hour-meter, fuel balance, evaluate excess machine operating hours, and document damage reports.</p>
+    </div>
+    <div>
+        <a href="{% url 'rentals:contract_detail' contract_no=contract.contract_no %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Cancel & Return to Contract
+        </a>
+    </div>
+</div>
+
+<!-- Dispatch Baseline Baseline Comparison Card -->
+<div class="card border-0 shadow-sm bg-light p-3 mb-4">
+    <div class="row g-3 align-items-center">
+        <div class="col-12 col-md-3">
+            <small class="text-muted text-uppercase fw-bold d-block">Handover Transaction</small>
+            <strong class="font-monospace text-dark">{{ dispatch_record.transaction_id }}</strong>
+        </div>
+        <div class="col-12 col-md-3">
+            <small class="text-muted text-uppercase fw-bold d-block">Dispatch Date & Meter</small>
+            <div>{{ dispatch_record.dispatch_datetime|date:"Y-m-d H:i" }}</div>
+            <span class="badge bg-primary font-monospace">{{ dispatch_record.dispatch_hour_meter }} hrs</span>
+            <span class="badge bg-secondary">{{ dispatch_record.dispatch_fuel_level }}% Fuel</span>
+        </div>
+        <div class="col-12 col-md-3">
+            <small class="text-muted text-uppercase fw-bold d-block">Dispatching Officer</small>
+            <span class="text-dark fw-semibold">{{ dispatch_record.dispatch_officer.get_full_name|default:dispatch_record.dispatch_officer.username }}</span>
+        </div>
+        <div class="col-12 col-md-3">
+            <small class="text-muted text-uppercase fw-bold d-block">Machine Asset</small>
+            <span class="badge bg-dark font-monospace me-1">{{ dispatch_record.equipment.asset_code }}</span>
+            <span class="small fw-semibold">{{ dispatch_record.equipment.equipment_name }}</span>
+        </div>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    {% crispy form %}
+
+    <div class="card border-0 shadow-sm bg-light p-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                <i class="bi bi-info-circle me-1 text-primary"></i> If damage is reported, machine status will transition to <strong>MAINTENANCE</strong>; otherwise <strong>AVAILABLE</strong>. Contract status will transition to <strong>RETURNED</strong>.
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'rentals:contract_detail' contract_no=contract.contract_no %}" class="btn btn-outline-secondary px-4">Cancel</a>
+                <button type="submit" class="btn btn-success px-4 fw-semibold shadow-sm">
+                    <i class="bi bi-check2-circle me-1"></i> Certify Equipment Return Check-in
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% endblock %}
