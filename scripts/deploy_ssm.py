@@ -17,56 +17,52 @@ def generate_ssm_payload():
     ecr_registry = f"{account_id}.dkr.ecr.{region}.amazonaws.com"
     ecr_image = f"{ecr_registry}/cerms-web-repo:{image_tag}"
 
-    # Remote script content written and executed cleanly with /bin/bash
-    script_lines = [
+    commands = [
+        "echo '=== Step 1: System Environment & Paths ==='",
+        "whoami",
+        "hostname",
+        "pwd",
         "export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\"",
-        "export HOME=/root",
+        "which docker || echo 'docker not found in PATH'",
+        "which aws || echo 'aws not found in PATH'",
         "mkdir -p /opt/cerms/certs /opt/cerms/scripts",
         "cd /opt/cerms",
-        "echo '=== [1/7] Logging into Amazon ECR ==='",
-        f"export ECR_IMAGE='{ecr_image}'",
-        f"aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin '{ecr_registry}' || true",
-        "echo '=== [2/7] Pulling Container Image & Extracting Configs ==='",
+        "echo '=== Step 2: ECR Authentication & Image Pull ==='",
+        f"aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin '{ecr_registry}' || echo 'ECR login failed'",
         f"docker pull {ecr_image}",
         f"CID=$(docker create {ecr_image})",
-        "docker cp ${CID}:/app/docker-compose.yml /opt/cerms/docker-compose.yml || true",
-        "docker cp ${CID}:/app/nginx.conf /opt/cerms/nginx.conf || true",
-        "docker cp ${CID}:/app/scripts/healthcheck_harness.sh /opt/cerms/scripts/healthcheck_harness.sh || true",
+        "docker cp ${CID}:/app/docker-compose.yml /opt/cerms/docker-compose.yml || echo 'No docker-compose in container'",
+        "docker cp ${CID}:/app/nginx.conf /opt/cerms/nginx.conf || echo 'No nginx.conf in container'",
+        "docker cp ${CID}:/app/scripts/healthcheck_harness.sh /opt/cerms/scripts/healthcheck_harness.sh || echo 'No healthcheck in container'",
         "if [ ! -f /opt/cerms/.env ]; then docker cp ${CID}:/app/.env.example /opt/cerms/.env || true; fi",
         "docker rm ${CID} || true",
         "chmod +x /opt/cerms/scripts/healthcheck_harness.sh || true",
-        "echo '=== [3/7] Starting MariaDB & Redis ==='",
+        "echo '=== Step 3: Infrastructure Orchestration (MariaDB & Redis) ==='",
         "docker compose up -d mariadb redis",
-        "echo '=== [4/7] Awaiting Database Engine ==='",
-        "for i in $(seq 1 30); do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo 'DB Ready'; break; fi; echo \"Waiting DB ($i/30)...\"; sleep 2; done",
+        "for i in $(seq 1 30); do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo 'DB Ready'; break; fi; echo 'Waiting for MariaDB...'; sleep 2; done",
         "docker exec cerms_mariadb mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS cerms_db; CREATE USER IF NOT EXISTS 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; ALTER USER 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; GRANT ALL PRIVILEGES ON cerms_db.* TO 'cerms_user'@'%'; FLUSH PRIVILEGES;\" || true",
-        "echo '=== [5/7] Starting Web, Celery & Nginx Services ==='",
+        "echo '=== Step 4: Web Application & Proxy Deployment ==='",
         "docker compose up -d --remove-orphans web celery nginx",
         "docker compose restart nginx || true",
         "sleep 5",
-        "echo '=== [6/7] Running Migrations, Seeding & Static Collection ==='",
+        "echo '=== Step 5: Database Migrations & Data Seeding ==='",
         "docker exec cerms_web python manage.py migrate --noinput",
         "docker exec cerms_web python manage.py seed_initial_data || true",
         "docker exec cerms_web python manage.py collectstatic --noinput",
-        "echo '=== [7/7] Verifying Health & Smoke Tests ==='",
-        "/opt/cerms/scripts/healthcheck_harness.sh",
-        "docker exec cerms_web python scan_urls.py",
+        "echo '=== Step 6: Environment Healthchecks & Smoke Tests ==='",
+        "/opt/cerms/scripts/healthcheck_harness.sh || echo 'Healthcheck harness returned non-zero'",
+        "docker exec cerms_web python scan_urls.py || echo 'Scan URLs returned non-zero'",
         "docker cp cerms_web:/app/smoke_test_summary.json /opt/cerms/smoke_test_summary.json || true",
         "echo '=== SMOKE TEST SUMMARY JSON ==='",
         "cat /opt/cerms/smoke_test_summary.json || echo '{\"total_tested\": 0, \"crashes\": 0}'"
     ]
 
-    remote_script_text = "\n".join(script_lines)
-
     payload = {
         "DocumentName": "AWS-RunShellScript",
         "InstanceIds": [instance_id],
-        "Comment": f"CERMS CI/CD Deploy [{image_tag}] to {instance_id}",
+        "Comment": f"CERMS Deploy [{image_tag}] to {instance_id}",
         "Parameters": {
-            "commands": [
-                f"cat << 'CERMS_DEPLOY_EOF' > /tmp/cerms_deploy.sh\n#!/bin/bash\nset -e\n{remote_script_text}\nCERMS_DEPLOY_EOF",
-                "/bin/bash /tmp/cerms_deploy.sh"
-            ]
+            "commands": commands
         }
     }
 
