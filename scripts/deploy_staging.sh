@@ -11,9 +11,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 mkdir -p /opt/cerms
 cd /opt/cerms
 
-if [ ! -f .env ]; then
-  cp .env.example .env
-fi
+cp -f .env.example .env
 
 # Authenticate with Amazon ECR
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "804372444724")
