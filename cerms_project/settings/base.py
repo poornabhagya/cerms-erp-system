@@ -47,8 +47,10 @@ THIRD_PARTY_APPS = [
     'widget_tweaks',
 ]
 
-# 5 Core Business Modules
+# Core and Business Modules
 LOCAL_APPS = [
+    'core.apps.CoreConfig',
+    'users.apps.UsersConfig',
     'fleet.apps.FleetConfig',
     'rentals.apps.RentalsConfig',
     'finance.apps.FinanceConfig',
@@ -57,6 +59,9 @@ LOCAL_APPS = [
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# Custom User Model (docs/02_DATABASE_SCHEMA.md & docs/03_ROLES_AND_PERMISSIONS.md)
+AUTH_USER_MODEL = 'users.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -196,3 +201,8 @@ SIMPLE_JWT = {
 # Security & CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 X_FRAME_OPTIONS = 'DENY'
+
+# Authentication URLs
+LOGIN_URL = 'users:login'
+LOGIN_REDIRECT_URL = 'users:profile'
+LOGOUT_REDIRECT_URL = 'users:login'
