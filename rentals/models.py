@@ -159,3 +159,400 @@ class ProjectSite(TimeStampedModel):
 
     def __str__(self):
         return f"{self.project_code} - {self.project_name} ({self.customer.company_name})"
+
+
+class Quotation(TimeStampedModel):
+    """
+    Quotation Model representing formal pricing offers, machinery duration estimates,
+    transport fees, and multi-tier managerial approval workflows.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = 'DRAFT', _('Draft')
+        PENDING_INTERNAL_APPROVAL = 'PENDING_INTERNAL_APPROVAL', _('Pending Internal Approval')
+        APPROVED_BY_MANAGEMENT = 'APPROVED_BY_MANAGEMENT', _('Approved by Management')
+        SENT_TO_CUSTOMER = 'SENT_TO_CUSTOMER', _('Sent to Customer')
+        ACCEPTED = 'ACCEPTED', _('Accepted by Customer')
+        REJECTED = 'REJECTED', _('Rejected')
+        EXPIRED = 'EXPIRED', _('Expired')
+        CONVERTED = 'CONVERTED', _('Converted to Contract')
+
+    class RateType(models.TextChoices):
+        DAILY = 'DAILY', _('Daily')
+        WEEKLY = 'WEEKLY', _('Weekly')
+        MONTHLY = 'MONTHLY', _('Monthly')
+
+    quotation_no = models.CharField(
+        _("Quotation Number"),
+        max_length=50,
+        primary_key=True,
+        help_text=_("Unique identifier (e.g., QT-2026-0001).")
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name='quotations',
+        verbose_name=_("Customer"),
+        help_text=_("Customer organization requesting the machinery quotation.")
+    )
+    project_site = models.ForeignKey(
+        ProjectSite,
+        on_delete=models.PROTECT,
+        related_name='quotations',
+        verbose_name=_("Project Site"),
+        help_text=_("Designated construction site for equipment delivery.")
+    )
+    equipment = models.ForeignKey(
+        'fleet.Equipment',
+        on_delete=models.PROTECT,
+        related_name='quotations',
+        verbose_name=_("Equipment Asset"),
+        help_text=_("Machinery asset requested for rental.")
+    )
+    start_date = models.DateField(
+        _("Rental Start Date"),
+        help_text=_("Commencement date of prospective rental.")
+    )
+    end_date = models.DateField(
+        _("Rental End Date"),
+        help_text=_("Estimated completion/return date of rental.")
+    )
+    rate_applied = models.DecimalField(
+        _("Applied Rate (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Unit rental rate agreed for this quotation.")
+    )
+    rate_type = models.CharField(
+        _("Rate Type"),
+        max_length=20,
+        choices=RateType.choices,
+        default=RateType.DAILY,
+        help_text=_("Rate frequency tier (Daily, Weekly, Monthly).")
+    )
+    estimated_transport_cost = models.DecimalField(
+        _("Estimated Transport Cost (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Estimated mobilization and demobilization transport fee.")
+    )
+    security_deposit_required = models.DecimalField(
+        _("Security Deposit Required (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Refundable cash deposit or escrow required before machine handover.")
+    )
+    discount_percentage = models.DecimalField(
+        _("Discount Percentage (%)"),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Approved commercial discount percentage (0-100%).")
+    )
+    subtotal_amount = models.DecimalField(
+        _("Subtotal Amount (LKR)"),
+        max_digits=12,
+        decimal_places=2,
+        help_text=_("Base rental charge before tax and transport.")
+    )
+    total_tax_amount = models.DecimalField(
+        _("Total Tax Amount (LKR)"),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Applicable statutory taxes (e.g., VAT, SSCL).")
+    )
+    grand_total_amount = models.DecimalField(
+        _("Grand Total Amount (LKR)"),
+        max_digits=12,
+        decimal_places=2,
+        help_text=_("Total quotation value including rental, transport, and taxes.")
+    )
+    status = models.CharField(
+        _("Quotation Status"),
+        max_length=30,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+        help_text=_("Commercial lifecycle status of this quotation.")
+    )
+    approved_by = models.ForeignKey(
+        'users.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_quotations',
+        verbose_name=_("Approved By"),
+        help_text=_("Management user who reviewed and authorized this quotation.")
+    )
+    approval_date = models.DateTimeField(
+        _("Approval Date & Time"),
+        null=True,
+        blank=True,
+        help_text=_("Timestamp when managerial authorization was granted.")
+    )
+
+    class Meta:
+        verbose_name = _("Quotation")
+        verbose_name_plural = _("Quotations")
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.quotation_no} - {self.customer.company_name} ({self.get_status_display()})"
+
+    @property
+    def duration_days(self) -> int:
+        """Calculates total rental calendar days inclusive of start and end dates."""
+        if self.start_date and self.end_date:
+            return max(1, (self.end_date - self.start_date).days + 1)
+        return 1
+
+    @property
+    def is_approved(self) -> bool:
+        """Returns True if the quotation has passed managerial approval."""
+        return self.status in [
+            self.Status.APPROVED_BY_MANAGEMENT,
+            self.Status.SENT_TO_CUSTOMER,
+            self.Status.ACCEPTED,
+            self.Status.CONVERTED,
+        ]
+
+
+class RentalContract(TimeStampedModel):
+    """
+    Rental Contract Model representing binding legal agreements executing equipment rentals.
+    Tracks billing cycles, escrow deposit payments, signed documents, and dispatch status.
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', _('Active')
+        DISPATCHED = 'DISPATCHED', _('Dispatched / In Transit')
+        ON_RENT = 'ON_RENT', _('On Rent')
+        PENDING_RETURN = 'PENDING_RETURN', _('Pending Return')
+        RETURNED = 'RETURNED', _('Returned')
+        CLOSED = 'CLOSED', _('Closed & Invoiced')
+        TERMINATED = 'TERMINATED', _('Terminated Early')
+
+    class BillingCycle(models.TextChoices):
+        WEEKLY = 'WEEKLY', _('Weekly')
+        MONTHLY = 'MONTHLY', _('Monthly')
+        ON_RETURN = 'ON_RETURN', _('On Return')
+
+    contract_no = models.CharField(
+        _("Contract Number"),
+        max_length=50,
+        primary_key=True,
+        help_text=_("Unique legal contract identifier (e.g., CNT-2026-0001).")
+    )
+    quotation = models.OneToOneField(
+        Quotation,
+        on_delete=models.PROTECT,
+        related_name='contract',
+        verbose_name=_("Originating Quotation"),
+        help_text=_("Accepted commercial quotation converted into this binding contract.")
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name='contracts',
+        verbose_name=_("Customer"),
+        help_text=_("Contracting customer organization.")
+    )
+    project_site = models.ForeignKey(
+        ProjectSite,
+        on_delete=models.PROTECT,
+        related_name='contracts',
+        verbose_name=_("Project Site"),
+        help_text=_("Designated construction site location for machine deployment.")
+    )
+    equipment = models.ForeignKey(
+        'fleet.Equipment',
+        on_delete=models.PROTECT,
+        related_name='contracts',
+        verbose_name=_("Equipment Asset"),
+        help_text=_("Machinery asset contracted for rental.")
+    )
+    contract_start_date = models.DateField(
+        _("Contract Start Date"),
+        help_text=_("Official start date of the rental period.")
+    )
+    contract_end_date = models.DateField(
+        _("Contract End Date"),
+        help_text=_("Agreed contractual completion / return date.")
+    )
+    billing_cycle = models.CharField(
+        _("Billing Cycle"),
+        max_length=20,
+        choices=BillingCycle.choices,
+        default=BillingCycle.MONTHLY,
+        help_text=_("Periodic invoice schedule (Weekly, Monthly, On Return).")
+    )
+    agreed_rate = models.DecimalField(
+        _("Agreed Rate (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Final agreed rental rate per period.")
+    )
+    deposit_paid = models.DecimalField(
+        _("Deposit Paid (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Actual security deposit amount collected and held in escrow.")
+    )
+    status = models.CharField(
+        _("Contract Status"),
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+        help_text=_("Operational and billing state of the rental contract.")
+    )
+    signed_contract_pdf = models.FileField(
+        _("Signed Contract PDF"),
+        upload_to='contracts/signed_pdfs/',
+        null=True,
+        blank=True,
+        help_text=_("Scanned or digital copy of the countersigned rental contract.")
+    )
+
+    class Meta:
+        verbose_name = _("Rental Contract")
+        verbose_name_plural = _("Rental Contracts")
+        ordering = ['-contract_start_date', '-created_at']
+
+    def __str__(self):
+        return f"{self.contract_no} - {self.customer.company_name} ({self.equipment.asset_code})"
+
+
+class DispatchReturn(TimeStampedModel):
+    """
+    Dispatch and Return Logistics Inspection Log Model.
+    Captures exact machine telemetry (hour meter, fuel level), handover checklist,
+    and returns inspection for excess hour and damage settlement.
+    """
+
+    transaction_id = models.CharField(
+        _("Transaction ID"),
+        max_length=50,
+        primary_key=True,
+        help_text=_("Unique logistics transaction identifier (e.g., TRX-2026-0001).")
+    )
+    contract = models.ForeignKey(
+        RentalContract,
+        on_delete=models.PROTECT,
+        related_name='dispatch_returns',
+        verbose_name=_("Rental Contract"),
+        help_text=_("Contract governing this machine handover.")
+    )
+    equipment = models.ForeignKey(
+        'fleet.Equipment',
+        on_delete=models.PROTECT,
+        related_name='dispatch_returns',
+        verbose_name=_("Equipment Asset"),
+        help_text=_("Equipment asset being dispatched or returned.")
+    )
+
+    # --- Dispatch Phase (Mobilization) ---
+    dispatch_datetime = models.DateTimeField(
+        _("Dispatch Date & Time"),
+        help_text=_("Exact date and time machinery exited depot for mobilization.")
+    )
+    dispatch_hour_meter = models.DecimalField(
+        _("Dispatch Hour Meter (hrs)"),
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Operating cumulative hour meter at time of mobilization.")
+    )
+    dispatch_fuel_level = models.DecimalField(
+        _("Dispatch Fuel Level (%)"),
+        max_digits=5,
+        decimal_places=2,
+        help_text=_("Opening fuel tank level (Percentage 0-100%).")
+    )
+    dispatch_officer = models.ForeignKey(
+        'users.User',
+        on_delete=models.PROTECT,
+        related_name='dispatched_logs',
+        verbose_name=_("Dispatch Officer"),
+        help_text=_("Operations or Yard officer certifying machine departure.")
+    )
+    dispatch_checklist = models.JSONField(
+        _("Dispatch Inspection Checklist"),
+        default=dict,
+        blank=True,
+        help_text=_("Structured pre-delivery condition checklist (Tires, Hydraulic, Engine, Cabin).")
+    )
+
+    # --- Return Phase (Demobilization & Inspection) ---
+    return_datetime = models.DateTimeField(
+        _("Return Date & Time"),
+        null=True,
+        blank=True,
+        help_text=_("Date and time machinery was received back at the depot.")
+    )
+    return_hour_meter = models.DecimalField(
+        _("Return Hour Meter (hrs)"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Closing cumulative hour meter upon check-in.")
+    )
+    return_fuel_level = models.DecimalField(
+        _("Return Fuel Level (%)"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Closing fuel tank level upon return.")
+    )
+    return_officer = models.ForeignKey(
+        'users.User',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='received_logs',
+        verbose_name=_("Return Receiving Officer"),
+        help_text=_("Workshop or receiving officer conducting check-in inspection.")
+    )
+    return_checklist = models.JSONField(
+        _("Return Inspection Checklist"),
+        default=dict,
+        blank=True,
+        help_text=_("Structured return condition checklist.")
+    )
+    damage_reported = models.BooleanField(
+        _("Damage / Defects Reported"),
+        default=False,
+        help_text=_("Flag indicating whether physical damage or breakdown occurred on-site.")
+    )
+    damage_notes = models.TextField(
+        _("Damage Description & Assessment Notes"),
+        blank=True,
+        help_text=_("Detailed notes on identified damages, component replacements, or repair estimates.")
+    )
+    excess_hours_calculated = models.DecimalField(
+        _("Calculated Excess Operating Hours (hrs)"),
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Billable operating hours exceeding the contractual standard allowance.")
+    )
+
+    class Meta:
+        verbose_name = _("Dispatch & Return Log")
+        verbose_name_plural = _("Dispatch & Return Logs")
+        ordering = ['-dispatch_datetime']
+
+    def __str__(self):
+        return f"{self.transaction_id} - {self.equipment.asset_code} ({self.contract.contract_no})"
+
+    @property
+    def hours_operated(self) -> Decimal:
+        """Calculates total hours operated during this rental period."""
+        if self.return_hour_meter is not None and self.dispatch_hour_meter is not None:
+            return max(Decimal('0.00'), self.return_hour_meter - self.dispatch_hour_meter)
+        return Decimal('0.00')

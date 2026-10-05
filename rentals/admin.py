@@ -1,11 +1,18 @@
 from django.contrib import admin
-from .models import Customer, ProjectSite
+from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
 
 
 class ProjectSiteInline(admin.TabularInline):
     model = ProjectSite
     extra = 1
     fields = ('project_code', 'project_name', 'site_contact_person', 'site_contact_phone', 'status')
+    show_change_link = True
+
+
+class DispatchReturnInline(admin.TabularInline):
+    model = DispatchReturn
+    extra = 0
+    fields = ('transaction_id', 'equipment', 'dispatch_datetime', 'dispatch_hour_meter', 'return_datetime', 'return_hour_meter', 'damage_reported')
     show_change_link = True
 
 
@@ -54,3 +61,62 @@ class ProjectSiteAdmin(admin.ModelAdmin):
     search_fields = ('project_code', 'project_name', 'customer__company_name', 'site_contact_person', 'site_contact_phone')
     raw_id_fields = ('customer',)
     ordering = ('project_name',)
+
+
+@admin.register(Quotation)
+class QuotationAdmin(admin.ModelAdmin):
+    list_display = (
+        'quotation_no',
+        'customer',
+        'equipment',
+        'start_date',
+        'end_date',
+        'rate_applied',
+        'grand_total_amount',
+        'status',
+        'approved_by',
+        'created_at'
+    )
+    list_filter = ('status', 'rate_type', 'created_at')
+    search_fields = ('quotation_no', 'customer__company_name', 'equipment__asset_code', 'equipment__equipment_name')
+    raw_id_fields = ('customer', 'project_site', 'equipment', 'approved_by')
+    ordering = ('-created_at',)
+
+
+@admin.register(RentalContract)
+class RentalContractAdmin(admin.ModelAdmin):
+    list_display = (
+        'contract_no',
+        'quotation',
+        'customer',
+        'equipment',
+        'contract_start_date',
+        'contract_end_date',
+        'billing_cycle',
+        'status',
+        'created_at'
+    )
+    list_filter = ('status', 'billing_cycle', 'created_at')
+    search_fields = ('contract_no', 'customer__company_name', 'equipment__asset_code', 'quotation__quotation_no')
+    raw_id_fields = ('quotation', 'customer', 'project_site', 'equipment')
+    inlines = [DispatchReturnInline]
+    ordering = ('-contract_start_date',)
+
+
+@admin.register(DispatchReturn)
+class DispatchReturnAdmin(admin.ModelAdmin):
+    list_display = (
+        'transaction_id',
+        'contract',
+        'equipment',
+        'dispatch_datetime',
+        'dispatch_hour_meter',
+        'return_datetime',
+        'return_hour_meter',
+        'damage_reported',
+        'excess_hours_calculated'
+    )
+    list_filter = ('damage_reported', 'dispatch_datetime', 'return_datetime')
+    search_fields = ('transaction_id', 'contract__contract_no', 'equipment__asset_code')
+    raw_id_fields = ('contract', 'equipment', 'dispatch_officer', 'return_officer')
+    ordering = ('-dispatch_datetime',)
