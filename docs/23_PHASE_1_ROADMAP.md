@@ -27,6 +27,7 @@ Phase 1 establishes the functional core of the Construction Equipment Rental Man
 ```
 
 ### Architectural Guarantees for Phase 1
+
 1. **Separation of Concerns:** Strict enforcement of **Thin Views**, **Fat Models**, and an isolated **Service Layer (`services.py`)** for multi-model business logic (e.g., Quotation-to-Contract conversion).
 2. **Zero Data Loss & Strict Data Integrity:** All critical business relationships must use `on_delete=models.PROTECT` or `models.SET_NULL`. `models.CASCADE` is strictly prohibited on operational data.
 3. **Environment-Aware Operations:** All background tasks (e.g., PDF generation, status notifications) must execute synchronously or via Celery depending on `USE_CELERY` in `.env`.
@@ -71,6 +72,7 @@ graph TD
 ### Step 1: Foundation Setup — Core Base Models & Authentication (`users` App)
 
 #### 1.1 `users` App Setup & Custom User Model
+
 - **Goal:** Replace Django's default `auth.User` with a custom model supporting 8 enterprise roles and single-sign-on compatibility before creating any database tables.
 - **Django Configuration:** Register `AUTH_USER_MODEL = 'users.User'` in `cerms_project/settings/base.py`.
 - **Model Definition (`users/models.py`):**
@@ -84,6 +86,7 @@ graph TD
   - Helper properties: `is_rental_officer`, `is_management`, `is_accountant`, `is_field_officer`.
 
 #### 1.2 RBAC Groups & Permission Matrix
+
 - **Fixture Implementation (`users/fixtures/core_roles.json`):**
   - Create the 8 Django `Group` instances with granular model permissions (`add_quotation`, `change_quotation`, `view_contract`, etc.).
 - **Security Utilities (`users/permissions.py`):**
@@ -92,6 +95,7 @@ graph TD
   - DRF API Permissions: `IsFieldOfficerUser`, `IsAccountantUser`.
 
 #### 1.3 Authentication Endpoints & UI
+
 - **Views & Templates (`users/views.py`):**
   - `LoginView`, `LogoutView`, `PasswordChangeView` with branded Bootstrap 5.3 styling.
   - JWT Authentication endpoints (`/api/v1/auth/token/`, `/api/v1/auth/token/refresh/`) for mobile field workers.
@@ -101,6 +105,7 @@ graph TD
 ### Step 2: Fleet Master Data Management (`fleet` App)
 
 #### 2.1 Models & Database Schema (`fleet/models.py`)
+
 - **`Category`:**
   - `id`: AutoField
   - `name`: CharField(max_length=100, unique=True)
@@ -118,12 +123,12 @@ graph TD
   - `purchase_date`: DateField()
   - `current_hour_meter`: DecimalField(max_digits=10, decimal_places=2, default=0.00)
   - `status`: CharField(max_length=20, choices=[
-      (`AVAILABLE`, 'Available'),
-      (`RESERVED`, 'Reserved'),
-      (`ON_RENT`, 'On Rent'),
-      (`MAINTENANCE`, 'Maintenance'),
-      (`BREAKDOWN`, 'Breakdown'),
-      (`INACTIVE`, 'Inactive')
+    (`AVAILABLE`, 'Available'),
+    (`RESERVED`, 'Reserved'),
+    (`ON_RENT`, 'On Rent'),
+    (`MAINTENANCE`, 'Maintenance'),
+    (`BREAKDOWN`, 'Breakdown'),
+    (`INACTIVE`, 'Inactive')
     ], default='AVAILABLE', db_index=True)
   - `primary_image`: ImageField(upload_to='equipment/images/', null=True, blank=True)
   - `specifications`: JSONField(default=dict, blank=True)
@@ -140,6 +145,7 @@ graph TD
   - `is_active`: BooleanField(default=True)
 
 #### 2.2 Fleet Business Logic & UI Layer
+
 - **Model Methods:**
   - `equipment.is_available_for_dates(start_date, end_date)`: Validates absence of conflicting active/reserved contracts.
   - `equipment.transition_status(new_status, user, notes)`: Audits state changes.
@@ -153,6 +159,7 @@ graph TD
 ### Step 3: Customer & Project Site Management (`rentals` App — Part 1)
 
 #### 3.1 Customer & Site Models (`rentals/models.py`)
+
 - **`Customer`:**
   - `customer_code`: CharField(max_length=50, primary_key=True) (e.g., `CUST-2026-001`)
   - `company_name`: CharField(max_length=200)
@@ -175,6 +182,7 @@ graph TD
   - `status`: CharField(choices=[('ACTIVE', 'Active'), ('COMPLETED', 'Completed')], default='ACTIVE')
 
 #### 3.2 Customer Business Logic & Credit Limit Verification
+
 - **Service Function (`rentals/services.py`):**
   - `validate_customer_credit_limit(customer, new_quotation_amount)`: Checks if `outstanding_balance + new_amount > credit_limit` and raises a validation warning or forces management approval.
 
@@ -183,11 +191,12 @@ graph TD
 ### Step 4: Rental Lifecycle Engine (`rentals` App — Part 2)
 
 #### 4.1 Rental Lifecycle Models
+
 - **`Quotation`:**
   - `quotation_no`: CharField(max_length=50, primary_key=True) (e.g., `QT-2026-0001`)
   - `customer`: ForeignKey(`Customer`, on_delete=models.PROTECT)
   - `project_site`: ForeignKey(`ProjectSite`, on_delete=models.PROTECT)
-  - `equipment`: ForeignKey(`fleet.Equipment`, on_delete=models.PROTECT)
+  - `equipment`: ForeignKey(`fleet.Equipment`, on_delete=models.PROTECT)...
   - `start_date`: DateField()
   - `end_date`: DateField()
   - `rate_applied`: DecimalField(max_digits=10, decimal_places=2)
@@ -199,14 +208,14 @@ graph TD
   - `total_tax_amount`: DecimalField(max_digits=12, decimal_places=2, default=0.00)
   - `grand_total_amount`: DecimalField(max_digits=12, decimal_places=2)
   - `status`: CharField(choices=[
-      ('DRAFT', 'Draft'),
-      ('PENDING_INTERNAL_APPROVAL', 'Pending Internal Approval'),
-      ('APPROVED_BY_MANAGEMENT', 'Approved by Management'),
-      ('SENT_TO_CUSTOMER', 'Sent to Customer'),
-      ('ACCEPTED', 'Accepted by Customer'),
-      ('REJECTED', 'Rejected'),
-      ('EXPIRED', 'Expired'),
-      ('CONVERTED', 'Converted to Contract')
+    ('DRAFT', 'Draft'),
+    ('PENDING_INTERNAL_APPROVAL', 'Pending Internal Approval'),
+    ('APPROVED_BY_MANAGEMENT', 'Approved by Management'),
+    ('SENT_TO_CUSTOMER', 'Sent to Customer'),
+    ('ACCEPTED', 'Accepted by Customer'),
+    ('REJECTED', 'Rejected'),
+    ('EXPIRED', 'Expired'),
+    ('CONVERTED', 'Converted to Contract')
     ], default='DRAFT')
   - `approved_by`: ForeignKey(`users.User`, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_quotations')
   - `approval_date`: DateTimeField(null=True, blank=True)
@@ -222,13 +231,13 @@ graph TD
   - `agreed_rate`: DecimalField(max_digits=10, decimal_places=2)
   - `deposit_paid`: DecimalField(max_digits=10, decimal_places=2, default=0.00)
   - `status`: CharField(choices=[
-      ('ACTIVE', 'Active'),
-      ('DISPATCHED', 'Dispatched / In Transit'),
-      ('ON_RENT', 'On Rent'),
-      ('PENDING_RETURN', 'Pending Return'),
-      ('RETURNED', 'Returned'),
-      ('CLOSED', 'Closed & Invoiced'),
-      ('TERMINATED', 'Terminated Early')
+    ('ACTIVE', 'Active'),
+    ('DISPATCHED', 'Dispatched / In Transit'),
+    ('ON_RENT', 'On Rent'),
+    ('PENDING_RETURN', 'Pending Return'),
+    ('RETURNED', 'Returned'),
+    ('CLOSED', 'Closed & Invoiced'),
+    ('TERMINATED', 'Terminated Early')
     ], default='ACTIVE')
   - `signed_contract_pdf`: FileField(upload_to='contracts/signed_pdfs/', null=True, blank=True)
 - **`DispatchReturn` (Physical Logistics Log):**
@@ -252,6 +261,7 @@ graph TD
     - `excess_hours_calculated`: DecimalField(max_digits=8, decimal_places=2, default=0.00)
 
 #### 4.2 State Machine & Service Layer Workflows (`rentals/services.py`)
+
 - **`convert_quotation_to_contract(quotation_id, user)`:**
   1. Validates quotation status is `ACCEPTED`.
   2. Creates `RentalContract` with agreed financial values.
@@ -273,6 +283,7 @@ graph TD
 ### Step 5: Financial Management — Billing, Payments & Deposits (`finance` App)
 
 #### 5.1 Financial Models (`finance/models.py`)
+
 - **`Invoice`:**
   - `invoice_no`: CharField(max_length=50, primary_key=True) (e.g., `INV-2026-0001`)
   - `contract`: ForeignKey(`rentals.RentalContract`, on_delete=models.PROTECT, related_name='invoices')
@@ -290,12 +301,12 @@ graph TD
   - `net_total_payable`: DecimalField(max_digits=12, decimal_places=2)
   - `paid_amount`: DecimalField(max_digits=12, decimal_places=2, default=0.00)
   - `status`: CharField(choices=[
-      ('DRAFT', 'Draft'),
-      ('UNPAID', 'Unpaid'),
-      ('PARTIALLY_PAID', 'Partially Paid'),
-      ('PAID', 'Paid'),
-      ('OVERDUE', 'Overdue'),
-      ('CANCELLED', 'Cancelled')
+    ('DRAFT', 'Draft'),
+    ('UNPAID', 'Unpaid'),
+    ('PARTIALLY_PAID', 'Partially Paid'),
+    ('PAID', 'Paid'),
+    ('OVERDUE', 'Overdue'),
+    ('CANCELLED', 'Cancelled')
     ], default='UNPAID', db_index=True)
 - **`Payment`:**
   - `payment_id`: CharField(max_length=50, primary_key=True) (e.g., `PAY-2026-0001`)
@@ -304,15 +315,15 @@ graph TD
   - `amount`: DecimalField(max_digits=12, decimal_places=2)
   - `payment_date`: DateField(default=timezone.now)
   - `payment_type`: CharField(choices=[
-      ('RENTAL_PAYMENT', 'Rental Invoice Payment'),
-      ('SECURITY_DEPOSIT', 'Security Deposit Receipt'),
-      ('DEPOSIT_REFUND', 'Security Deposit Refund')
+    ('RENTAL_PAYMENT', 'Rental Invoice Payment'),
+    ('SECURITY_DEPOSIT', 'Security Deposit Receipt'),
+    ('DEPOSIT_REFUND', 'Security Deposit Refund')
     ], default='RENTAL_PAYMENT')
   - `payment_method`: CharField(choices=[
-      ('BANK_TRANSFER', 'Bank Transfer / Wire'),
-      ('CHEQUE', 'Cheque'),
-      ('CASH', 'Cash'),
-      ('CARD', 'Credit / Debit Card')
+    ('BANK_TRANSFER', 'Bank Transfer / Wire'),
+    ('CHEQUE', 'Cheque'),
+    ('CASH', 'Cash'),
+    ('CARD', 'Credit / Debit Card')
     ])
   - `reference_number`: CharField(max_length=100, blank=True)
   - `receipt_pdf`: FileField(upload_to='receipts/', null=True, blank=True)
@@ -325,13 +336,14 @@ graph TD
   - `refunded_amount`: DecimalField(max_digits=12, decimal_places=2, default=0.00)
   - `deducted_amount`: DecimalField(max_digits=12, decimal_places=2, default=0.00)
   - `status`: CharField(choices=[
-      ('PENDING', 'Pending Receipt'),
-      ('HELD', 'Held in Escrow'),
-      ('DEDUCTED', 'Partially / Fully Deducted'),
-      ('REFUNDED', 'Fully Refunded')
+    ('PENDING', 'Pending Receipt'),
+    ('HELD', 'Held in Escrow'),
+    ('DEDUCTED', 'Partially / Fully Deducted'),
+    ('REFUNDED', 'Fully Refunded')
     ], default='PENDING')
 
 #### 5.2 Billing Logic & PDF Generation (`finance/services.py`)
+
 - **`generate_final_rental_invoice(contract_id, user)`:**
   1. Aggregates basic rental duration, excess hour-meter charges, fuel difference penalties, and damage repair assessments.
   2. Applies security deposit deduction towards final total.
@@ -347,6 +359,7 @@ graph TD
 ### Step 6: Interactive Availability Calendar & Visual Scheduling
 
 #### 6.1 Calendar Data API & Conflict Engine (`rentals/views.py` & `api.py`)
+
 - **Interactive FullCalendar / DataTables Visualizer:**
   - Route: `/rentals/availability-calendar/` and `/api/v1/rentals/calendar-events/`.
   - Color-coded timeline events:
@@ -362,7 +375,7 @@ graph TD
           contract_start_date__lte=end_date,
           contract_end_date__gte=start_date
       ).values_list('equipment_id', flat=True)
-      
+
       return Equipment.objects.filter(
           category_id=category_id,
           status='AVAILABLE'
@@ -375,24 +388,24 @@ graph TD
 
 To ensure clean execution without circular database dependencies or broken foreign keys, implement files and modules in this exact order:
 
-| Phase 1 Stage | Django App | Target Files & Components | Key Models & Artifacts | Primary Dependency |
-|---|---|---|---|---|
-| **Step 1.1** | `users` | `models.py`, `managers.py` | `User` (Custom User Model) | None |
-| **Step 1.2** | `users` | `fixtures/core_roles.json`, `permissions.py` | 8 RBAC Groups & Permission Mixins | `User` |
-| **Step 1.3** | `users` | `views.py`, `urls.py`, `templates/users/` | Login, Logout, Dashboard redirect | RBAC Groups |
-| **Step 2.1** | `fleet` | `models.py` (Category, Equipment, RentalRate) | `Category`, `Equipment`, `RentalRate` | `users.User` |
-| **Step 2.2** | `fleet` | `forms.py`, `views.py`, `templates/fleet/` | Fleet CRUD, Asset Master views | `fleet.models` |
-| **Step 3.1** | `rentals` | `models.py` (Customer, ProjectSite) | `Customer`, `ProjectSite` | `users.User` |
-| **Step 3.2** | `rentals` | `forms.py`, `views.py`, `templates/rentals/` | Customer & Project Site CRUD | `Customer`, `ProjectSite` |
-| **Step 4.1** | `rentals` | `models.py` (Quotation, RentalContract) | `Quotation`, `RentalContract` | `Equipment`, `Customer` |
-| **Step 4.2** | `rentals` | `services.py` (Quotation Approval & Conversion) | `convert_quotation_to_contract()` | `Quotation`, `Contract` |
-| **Step 4.3** | `rentals` | `models.py` (DispatchReturn), `forms.py` | `DispatchReturn` (Logistics Log) | `RentalContract`, `Equipment` |
-| **Step 4.4** | `rentals` | `services.py` (Dispatch/Return Logistics Logic) | `process_equipment_dispatch/return()` | `DispatchReturn` |
-| **Step 5.1** | `finance` | `models.py` (Invoice, Payment, SecurityDeposit) | `Invoice`, `Payment`, `SecurityDeposit`| `RentalContract`, `Customer`|
-| **Step 5.2** | `finance` | `services.py` (Billing Engine & WeasyPrint) | `generate_final_rental_invoice()` | `Invoice`, `DispatchReturn`|
-| **Step 5.3** | `finance` | `forms.py`, `views.py`, `templates/finance/` | Invoicing & Payment Settlement UI | `finance.models` |
-| **Step 6.1** | `rentals` | `templates/rentals/calendar.html`, `views.py` | FullCalendar Availability Grid | `RentalContract`, `Equipment`|
-| **Step 7.1** | `scripts` | `fixtures/`, `management/commands/seed_dummy_data.py` | 50 Assets, 20 Contracts, 10 Customers | All Phase 1 Models |
+| Phase 1 Stage | Django App | Target Files & Components                             | Key Models & Artifacts                  | Primary Dependency            |
+| ------------- | ---------- | ----------------------------------------------------- | --------------------------------------- | ----------------------------- |
+| **Step 1.1**  | `users`    | `models.py`, `managers.py`                            | `User` (Custom User Model)              | None                          |
+| **Step 1.2**  | `users`    | `fixtures/core_roles.json`, `permissions.py`          | 8 RBAC Groups & Permission Mixins       | `User`                        |
+| **Step 1.3**  | `users`    | `views.py`, `urls.py`, `templates/users/`             | Login, Logout, Dashboard redirect       | RBAC Groups                   |
+| **Step 2.1**  | `fleet`    | `models.py` (Category, Equipment, RentalRate)         | `Category`, `Equipment`, `RentalRate`   | `users.User`                  |
+| **Step 2.2**  | `fleet`    | `forms.py`, `views.py`, `templates/fleet/`            | Fleet CRUD, Asset Master views          | `fleet.models`                |
+| **Step 3.1**  | `rentals`  | `models.py` (Customer, ProjectSite)                   | `Customer`, `ProjectSite`               | `users.User`                  |
+| **Step 3.2**  | `rentals`  | `forms.py`, `views.py`, `templates/rentals/`          | Customer & Project Site CRUD            | `Customer`, `ProjectSite`     |
+| **Step 4.1**  | `rentals`  | `models.py` (Quotation, RentalContract)               | `Quotation`, `RentalContract`           | `Equipment`, `Customer`       |
+| **Step 4.2**  | `rentals`  | `services.py` (Quotation Approval & Conversion)       | `convert_quotation_to_contract()`       | `Quotation`, `Contract`       |
+| **Step 4.3**  | `rentals`  | `models.py` (DispatchReturn), `forms.py`              | `DispatchReturn` (Logistics Log)        | `RentalContract`, `Equipment` |
+| **Step 4.4**  | `rentals`  | `services.py` (Dispatch/Return Logistics Logic)       | `process_equipment_dispatch/return()`   | `DispatchReturn`              |
+| **Step 5.1**  | `finance`  | `models.py` (Invoice, Payment, SecurityDeposit)       | `Invoice`, `Payment`, `SecurityDeposit` | `RentalContract`, `Customer`  |
+| **Step 5.2**  | `finance`  | `services.py` (Billing Engine & WeasyPrint)           | `generate_final_rental_invoice()`       | `Invoice`, `DispatchReturn`   |
+| **Step 5.3**  | `finance`  | `forms.py`, `views.py`, `templates/finance/`          | Invoicing & Payment Settlement UI       | `finance.models`              |
+| **Step 6.1**  | `rentals`  | `templates/rentals/calendar.html`, `views.py`         | FullCalendar Availability Grid          | `RentalContract`, `Equipment` |
+| **Step 7.1**  | `scripts`  | `fixtures/`, `management/commands/seed_dummy_data.py` | 50 Assets, 20 Contracts, 10 Customers   | All Phase 1 Models            |
 
 ---
 
@@ -401,12 +414,15 @@ To ensure clean execution without circular database dependencies or broken forei
 Per `docs/16_REPORTING_AND_PDF_GUIDELINES.md`, Phase 1 must implement automated PDF rendering for the three core customer-facing documents:
 
 ### 1. Quotation PDF (`templates/reports/quotation_pdf.html`)
+
 - **Contents:** Company header, Quotation ID, Customer details, Equipment specs, Daily/Weekly/Monthly rate breakdown, Estimated transport fees, Security deposit terms, Validity expiration date, Signature placeholder.
 
 ### 2. Rental Contract Agreement (`templates/reports/contract_pdf.html`)
+
 - **Contents:** Official legal contract terms, Contract ID, Customer & Site address, Equipment Serial/Asset code, Agreed billing cycle, Overtime hour-meter rate rules, Breakdown & Maintenance liability clauses, Dual Signatures (Company Representative & Customer).
 
 ### 3. Tax Invoice (`templates/reports/invoice_pdf.html`)
+
 - **Contents:** Official Tax Invoice Number, VAT registration number, Itemized rental days, Excess hours billed, Damage recovery line-items, Security deposit credit offset, Total amount payable in Sri Lankan Rupees (LKR), Bank account transfer instructions.
 
 ---
