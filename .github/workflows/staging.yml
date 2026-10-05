@@ -110,42 +110,79 @@ jobs:
         id: run-smoke-test
         run: |
           echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
+
+          # 1. Generate deployment bash script locally
+          cat << 'SCRIPT_EOF' > deploy_staging.sh
+          #!/usr/bin/env bash
+          set -e
+          export HOME=/root
+          mkdir -p /opt/cerms
+          cd /opt/cerms
+
+          if [ ! -d .git ]; then
+            git clone https://github.com/${{ github.repository }}.git . || true
+          fi
+          git config --system --add safe.directory /opt/cerms || true
+          git fetch origin main || true
+          git reset --hard origin/main || true
+          cp -f .env.example .env || true
+
+          export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "804372444724")
+          export ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com
+          export ECR_IMAGE=${ECR_URL}/cerms-web-repo:staging
+
+          aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL} || true
+
+          docker compose down -v || true
+          docker compose pull web celery || true
+          docker compose up -d mariadb redis
+
+          for i in {1..30}; do
+            if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then
+              echo "MariaDB is ready"
+              break
+            fi
+            sleep 2
+          done
+
+          docker exec cerms_mariadb mariadb -u root -e "CREATE DATABASE IF NOT EXISTS cerms_db; CREATE USER IF NOT EXISTS 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; ALTER USER 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; GRANT ALL PRIVILEGES ON cerms_db.* TO 'cerms_user'@'%'; FLUSH PRIVILEGES;" || true
+
+          docker compose up -d --remove-orphans web celery nginx
+          docker compose restart nginx || true
+          sleep 5
+
+          docker exec cerms_web python manage.py migrate --noinput
+          docker exec cerms_web python manage.py seed_initial_data || true
+          docker exec cerms_web python manage.py collectstatic --noinput
+
+          chmod +x ./scripts/healthcheck_harness.sh || true
+          ./scripts/healthcheck_harness.sh || true
+
+          docker cp scan_urls.py cerms_web:/app/scan_urls.py || true
+          docker exec cerms_web python scan_urls.py || true
+          docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true
+          cat ./smoke_test_summary.json || echo '{"total_tested": 0, "crashes": 0}'
+          SCRIPT_EOF
+
+          # 2. Package script into SSM parameters JSON via Python
+          python3 -c "
+          import json
+          with open('deploy_staging.sh', 'r') as f:
+              script_content = f.read()
+          params = {
+              'commands': [script_content]
+          }
+          with open('ssm_params.json', 'w') as f:
+              json.dump(params, f, indent=2)
+          "
+
+          # 3. Dispatch SSM Run Command using file-based parameters
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ env.STAGING_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "CERMS Staging Auto-Deploy & Smoke Test: ${{ github.sha }}" \
             --timeout-seconds 600 \
-            --parameters 'commands=[
-              "set -e",
-              "export HOME=/root",
-              "mkdir -p /opt/cerms",
-              "cd /opt/cerms",
-              "if [ ! -d .git ]; then git clone https://github.com/${{ github.repository }}.git . || true; fi",
-              "git config --system --add safe.directory /opt/cerms || true",
-              "git fetch origin main || true",
-              "git reset --hard origin/main || true",
-              "cp -f .env.example .env",
-              "export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)",
-              "export ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com",
-              "export ECR_IMAGE=${ECR_URL}/cerms-web-repo:staging",
-              "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL}",
-              "docker compose down -v || true",
-              "docker compose pull web celery || true",
-              "docker compose up -d mariadb redis",
-              "for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done",
-              "docker compose up -d --remove-orphans web celery nginx",
-              "docker compose restart nginx || true",
-              "sleep 5",
-              "docker exec cerms_web python manage.py migrate --noinput",
-              "docker exec cerms_web python manage.py seed_initial_data || true",
-              "docker exec cerms_web python manage.py collectstatic --noinput",
-              "chmod +x ./scripts/healthcheck_harness.sh",
-              "./scripts/healthcheck_harness.sh",
-              "docker cp scan_urls.py cerms_web:/app/scan_urls.py || true",
-              "docker exec cerms_web python scan_urls.py || true",
-              "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
-              "cat ./smoke_test_summary.json || echo {\"total_tested\": 0, \"crashes\": 0}"
-            ]' \
+            --parameters file://ssm_params.json \
             --query "Command.CommandId" \
             --output text)
 
@@ -172,6 +209,11 @@ jobs:
             --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
             --output json > ssm_invocation.json || true
 
+          aws ssm list-command-invocations \
+            --command-id "$COMMAND_ID" \
+            --details \
+            --output json > ssm_details.json || true
+
           python3 - << 'EOF'
           import json, sys, re, os
 
@@ -181,6 +223,12 @@ jobs:
           except Exception as e:
               print(f"Warning: Could not parse ssm_invocation.json: {e}")
               data = {}
+
+          try:
+              with open('ssm_details.json', 'r') as f:
+                  details_data = json.load(f)
+          except Exception:
+              details_data = {}
 
           status = data.get('Status', 'Unknown')
           status_details = data.get('StatusDetails', 'Unknown')
@@ -204,6 +252,15 @@ jobs:
               print(stderr)
           else:
               print("(No Standard Error content recorded)")
+
+          if not stdout.strip() and not stderr.strip() and 'CommandInvocations' in details_data:
+              print("\n--- PLUGIN INVOCATION DETAILS ---")
+              for inv in details_data.get('CommandInvocations', []):
+                  for plug in inv.get('CommandPlugins', []):
+                      print(f"Plugin: {plug.get('Name')} | Status: {plug.get('Status')} | Details: {plug.get('StatusDetails')}")
+                      if plug.get('Output'):
+                          print(f"Plugin Output: {plug.get('Output')}")
+
           print("=" * 70 + "\n")
 
           # Extract smoke test JSON if present
@@ -223,7 +280,7 @@ jobs:
                       'success_count': 0,
                       'protected_count': 0,
                       'crashes': 1 if status != 'Success' else 0,
-                      'failed_routes': [{'url': 'Staging SSM Command Execution', 'status_code': str(response_code), 'error': (stderr.strip() or stdout.strip())[-300:] if (stderr or stdout) else f'Execution status: {status}'}] if status != 'Success' else [],
+                      'failed_routes': [{'url': 'Staging SSM Command Execution', 'status_code': str(response_code), 'error': (stderr.strip() or stdout.strip() or str(status_details))[-300:]}] if status != 'Success' else [],
                       'status': 'PASSED' if status == 'Success' else 'FAILED'
                   }, f, indent=2)
 
