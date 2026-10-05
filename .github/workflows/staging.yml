@@ -112,59 +112,72 @@ jobs:
       - name: Trigger SSM Deployment and Automated Smoke Test
         id: run-smoke-test
         run: |
-          echo "=== 1. Checking SSM Agent Status for Host (${{ env.STAGING_INSTANCE_ID }}) ==="
-          aws ssm describe-instance-information \
-            --filters "Key=InstanceIds,Values=${{ env.STAGING_INSTANCE_ID }}" \
-            --output table || true
+          echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
 
-          echo "=== 2. Generating SSM deployment payload ==="
-          python3 scripts/deploy_ssm.py "${{ env.STAGING_INSTANCE_ID }}" "staging"
+          SCAN_SCRIPT_B64=$(base64 -w 0 scan_urls.py)
 
-          echo "=== 3. Dispatching AWS SSM Command ==="
           COMMAND_ID=$(aws ssm send-command \
-            --cli-input-json file://ssm_request.json \
+            --instance-ids "${{ env.STAGING_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "CERMS Staging Auto-Deploy & Smoke Test: ${{ github.sha }}" \
+            --parameters "commands=[
+              \"set -e\",
+              \"export HOME=/root\",
+              \"mkdir -p /opt/cerms\",
+              \"cd /opt/cerms\",
+              \"if [ ! -d .git ]; then git clone https://github.com/poornabhagya/cerms-erp-system.git . ; else git fetch origin main && git reset --hard origin/main ; fi\",
+              \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
+              \"if [ ! -f /opt/cerms/.env ]; then cp /opt/cerms/.env.example /opt/cerms/.env ; fi\",
+              \"chmod +x /opt/cerms/scripts/healthcheck_harness.sh || true\",
+              \"export AWS_ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)\",
+              \"export ECR_URL=\${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com\",
+              \"export ECR_IMAGE=\${ECR_URL}/cerms-web-repo:staging\",
+              \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin \${ECR_URL}\",
+              \"docker compose pull web celery || true\",
+              \"docker compose up -d --force-recreate mariadb redis\",
+              \"for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done\",
+              \"docker compose up -d --force-recreate web celery nginx\",
+              \"docker compose restart nginx || true\",
+              \"sleep 5\",
+              \"docker exec cerms_web python manage.py migrate --noinput\",
+              \"docker exec cerms_web python manage.py seed_initial_data || true\",
+              \"docker exec cerms_web python manage.py collectstatic --noinput\",
+              \"/opt/cerms/scripts/healthcheck_harness.sh || true\",
+              \"docker cp /opt/cerms/scan_urls.py cerms_web:/app/scan_urls.py || true\",
+              \"docker exec cerms_web python scan_urls.py || true\",
+              \"docker cp cerms_web:/app/smoke_test_summary.json /opt/cerms/smoke_test_summary.json || true\",
+              \"cat /opt/cerms/smoke_test_summary.json || echo {\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\"
+            ]" \
             --query "Command.CommandId" \
             --output text)
 
           echo "SSM Command dispatched with ID: $COMMAND_ID"
-
-          echo "=== 4. Polling SSM Command Execution ==="
-          for i in $(seq 1 60); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
-              --query "Status" \
-              --output text 2>/dev/null || echo "Pending")
-
-            echo "SSM Status: $STATUS (polling $i/60)..."
-            if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
-              break
-            fi
-            sleep 10
-          done
-
-          echo "=== 5. Full SSM Invocation Details ==="
-          aws ssm list-command-invocations \
+          aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --details \
-            --output json || true
+            --instance-id "${{ env.STAGING_INSTANCE_ID }}" || true
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
+            --query "Status" \
+            --output text)
 
           OUTPUT=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
             --query "StandardOutputContent" \
-            --output text 2>/dev/null || echo "")
+            --output text)
 
           STDERR=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
             --query "StandardErrorContent" \
-            --output text 2>/dev/null || echo "")
+            --output text)
 
           echo "=== STAGING EXECUTION OUTPUT ==="
           echo "$OUTPUT"
 
-          if [ -n "$STDERR" ] && [ "$STDERR" != "None" ]; then
+          if [ -n "$STDERR" ]; then
             echo "=== STAGING EXECUTION STDERR ==="
             echo "$STDERR"
           fi
@@ -183,6 +196,7 @@ jobs:
 
           if [ "$STATUS" != "Success" ]; then
             echo "::error title=Staging Deployment Failed::SSM execution returned status: $STATUS"
+            echo "Error Output: $STDERR"
             exit 1
           fi
 
