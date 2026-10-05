@@ -30,7 +30,7 @@ echo "=========================================="
 echo "3. Installing System Dependencies & AWS CLI v2"
 echo "=========================================="
 apt-get update && apt-get upgrade -y
-apt-get install -y ca-certificates curl gnupg unzip ufw
+apt-get install -y ca-certificates curl gnupg unzip ufw git software-properties-common
 
 # Install AWS CLI v2 (Architecture Adaptive)
 ARCH=$(uname -m)

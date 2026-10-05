@@ -72,6 +72,8 @@ jobs:
             --parameters "commands=[
               \"set -e\",
               \"export HOME=/root\",
+              \"export PATH=\\\"/usr/local/bin:/usr/bin:/bin:\$PATH\\\"\",
+              \"which git >/dev/null 2>&1 || (apt-get update -y && apt-get install -y git)\",
               \"mkdir -p /opt/cerms\",
               \"cd /opt/cerms\",
               \"if [ ! -d .git ]; then git clone https://github.com/poornabhagya/cerms-erp-system.git . ; else git fetch origin main && git reset --hard origin/main ; fi\",
@@ -84,7 +86,7 @@ jobs:
               \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin \${ECR_URL}\",
               \"docker compose pull web celery || true\",
               \"docker compose up -d --force-recreate mariadb redis\",
-              \"for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done\",
+              \"for i in \$(seq 1 30); do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done\",
               \"docker compose up -d --force-recreate web celery nginx\",
               \"docker compose restart nginx || true\",
               \"sleep 5\",
