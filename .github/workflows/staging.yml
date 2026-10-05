@@ -109,102 +109,23 @@ jobs:
       - name: Trigger SSM Deployment and Automated Smoke Test
         id: run-smoke-test
         run: |
-          echo "Verifying SSM connectivity for Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
-          SSM_PING=$(aws ssm describe-instance-information \
-            --filters "Key=InstanceIds,Values=${{ env.STAGING_INSTANCE_ID }}" \
-            --query "InstanceInformationList[0].PingStatus" \
-            --output text 2>/dev/null || echo "Unknown")
+          echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
 
-          echo "Target Instance PingStatus: $SSM_PING"
-          if [ "$SSM_PING" != "Online" ]; then
-            echo "::warning title=SSM Host Warning::Instance ${{ env.STAGING_INSTANCE_ID }} PingStatus is '$SSM_PING'."
-          fi
-
-          echo "Generating Staging Deployment Payload..."
-
-          # 1. Generate deployment bash script locally
-          cat << 'SCRIPT_EOF' > deploy_staging.sh
-          #!/bin/bash -xe
-          export HOME=/root
-          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
-
-          mkdir -p /opt/cerms
-          cd /opt/cerms
-
-          if [ ! -d .git ]; then
-            git clone https://github.com/${{ github.repository }}.git . || true
-          fi
-          git config --system --add safe.directory /opt/cerms || true
-          git fetch origin main || true
-          git reset --hard origin/main || true
-          cp -f .env.example .env || true
-
-          export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "804372444724")
-          export ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com
-          export ECR_IMAGE=${ECR_URL}/cerms-web-repo:staging
-
-          aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL} || true
-
-          docker compose down -v || true
-          docker compose pull web celery || true
-          docker compose up -d mariadb redis
-
-          for i in $(seq 1 30); do
-            if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then
-              echo "MariaDB is ready"
-              break
-            fi
-            sleep 2
-          done
-
-          docker exec cerms_mariadb mariadb -u root -e "CREATE DATABASE IF NOT EXISTS cerms_db; CREATE USER IF NOT EXISTS 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; ALTER USER 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; GRANT ALL PRIVILEGES ON cerms_db.* TO 'cerms_user'@'%'; FLUSH PRIVILEGES;" || true
-
-          docker compose up -d --remove-orphans web celery nginx
-          docker compose restart nginx || true
-          sleep 5
-
-          docker exec cerms_web python manage.py migrate --noinput
-          docker exec cerms_web python manage.py seed_initial_data || true
-          docker exec cerms_web python manage.py collectstatic --noinput
-
-          chmod +x ./scripts/healthcheck_harness.sh || true
-          ./scripts/healthcheck_harness.sh || true
-
-          docker cp scan_urls.py cerms_web:/app/scan_urls.py || true
-          docker exec cerms_web python scan_urls.py || true
-          docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true
-          cat ./smoke_test_summary.json || echo '{"total_tested": 0, "crashes": 0}'
-          SCRIPT_EOF
-
-          # 2. Package script into strict POSIX-compatible SSM parameters JSON via Python
-          python3 -c "
-          import json, base64
-          with open('deploy_staging.sh', 'rb') as f:
-              b64_script = base64.b64encode(f.read()).decode('utf-8')
-          params = {
-              'commands': [
-                  '#!/bin/sh',
-                  'export HOME=/root',
-                  'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH',
-                  f'echo {b64_script} | base64 -d > /tmp/cerms_deploy.sh',
-                  'chmod 755 /tmp/cerms_deploy.sh',
-                  '/bin/bash -xe /tmp/cerms_deploy.sh > /tmp/cerms_deploy.log 2>&1',
-                  'RET=$?',
-                  'cat /tmp/cerms_deploy.log',
-                  'exit $RET'
-              ]
-          }
-          with open('ssm_params.json', 'w') as f:
-              json.dump(params, f, indent=2)
-          "
-
-          # 3. Dispatch SSM Run Command using file-based parameters
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ env.STAGING_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "CERMS Staging Auto-Deploy & Smoke Test: ${{ github.sha }}" \
             --timeout-seconds 600 \
-            --parameters file://ssm_params.json \
+            --parameters 'commands=[
+              "mkdir -p /opt/cerms",
+              "cd /opt/cerms",
+              "if [ ! -d .git ]; then git clone https://github.com/${{ github.repository }}.git . ; fi",
+              "git config --system --add safe.directory /opt/cerms || true",
+              "git fetch origin main",
+              "git reset --hard origin/main",
+              "chmod +x ./scripts/deploy_staging.sh",
+              "./scripts/deploy_staging.sh"
+            ]' \
             --query "Command.CommandId" \
             --output text)
 
@@ -231,11 +152,6 @@ jobs:
             --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
             --output json > ssm_invocation.json || true
 
-          aws ssm list-command-invocations \
-            --command-id "$COMMAND_ID" \
-            --details \
-            --output json > ssm_details.json || true
-
           python3 - << 'EOF'
           import json, sys, re, os
 
@@ -245,12 +161,6 @@ jobs:
           except Exception as e:
               print(f"Warning: Could not parse ssm_invocation.json: {e}")
               data = {}
-
-          try:
-              with open('ssm_details.json', 'r') as f:
-                  details_data = json.load(f)
-          except Exception:
-              details_data = {}
 
           status = data.get('Status', 'Unknown')
           status_details = data.get('StatusDetails', 'Unknown')
@@ -274,15 +184,6 @@ jobs:
               print(stderr)
           else:
               print("(No Standard Error content recorded)")
-
-          if not stdout.strip() and not stderr.strip() and 'CommandInvocations' in details_data:
-              print("\n--- PLUGIN INVOCATION DETAILS ---")
-              for inv in details_data.get('CommandInvocations', []):
-                  for plug in inv.get('CommandPlugins', []):
-                      print(f"Plugin: {plug.get('Name')} | Status: {plug.get('Status')} | Details: {plug.get('StatusDetails')}")
-                      if plug.get('Output'):
-                          print(f"Plugin Output: {plug.get('Output')}")
-
           print("=" * 70 + "\n")
 
           # Extract smoke test JSON if present
