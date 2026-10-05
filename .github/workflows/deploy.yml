@@ -63,42 +63,54 @@ jobs:
         run: |
           echo "Deploying release ${{ github.ref_name }} to Production Host (${{ env.PROD_INSTANCE_ID }})..."
 
-          SCAN_SCRIPT_B64=$(base64 -w 0 scan_urls.py)
+          python3 -c '
+          import json, os
+
+          commands = [
+              "set -e",
+              "mkdir -p /opt/cerms/certs /opt/cerms/scripts",
+              "cd /opt/cerms",
+              "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)",
+              "ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com",
+              "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL}",
+              "docker pull ${ECR_URL}/cerms-web-repo:latest",
+              "docker rm -f cerms_temp 2>/dev/null || true",
+              "docker create --name cerms_temp ${ECR_URL}/cerms-web-repo:latest",
+              "docker cp cerms_temp:/app/docker-compose.yml ./docker-compose.yml || true",
+              "docker cp cerms_temp:/app/nginx.conf ./nginx.conf || true",
+              "docker cp cerms_temp:/app/scripts/healthcheck_harness.sh ./scripts/healthcheck_harness.sh || true",
+              "if [ ! -f .env ]; then docker cp cerms_temp:/app/.env.example .env || true; fi",
+              "docker rm -f cerms_temp 2>/dev/null || true",
+              "chmod +x ./scripts/healthcheck_harness.sh || true",
+              "export ECR_IMAGE=${ECR_URL}/cerms-web-repo:latest",
+              "docker compose up -d mariadb redis",
+              "for i in $(seq 1 30); do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done",
+              "docker compose up -d --force-recreate web celery nginx",
+              "docker compose restart nginx || true",
+              "docker exec cerms_web python manage.py migrate --noinput",
+              "docker exec cerms_web python manage.py seed_initial_data || true",
+              "docker exec cerms_web python manage.py collectstatic --noinput",
+              "./scripts/healthcheck_harness.sh || true",
+              "docker exec cerms_web python scan_urls.py || true",
+              "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
+              "cat ./smoke_test_summary.json || echo \"{\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\""
+          ]
+
+          payload = {
+              "InstanceIds": ["${{ env.PROD_INSTANCE_ID }}"],
+              "DocumentName": "AWS-RunShellScript",
+              "Comment": "CERMS Prod Release Deploy: ${{ github.ref_name }}",
+              "Parameters": {
+                  "commands": commands
+              }
+          }
+
+          with open("ssm_prod_payload.json", "w") as f:
+              json.dump(payload, f, indent=2)
+          '
 
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ env.PROD_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --comment "CERMS Prod Release Deploy: ${{ github.ref_name }}" \
-            --parameters "commands=[
-              \"set -e\",
-              \"export HOME=/root\",
-              \"export PATH=\\\"/usr/local/bin:/usr/bin:/bin:\$PATH\\\"\",
-              \"which git >/dev/null 2>&1 || (apt-get update -y && apt-get install -y git)\",
-              \"mkdir -p /opt/cerms\",
-              \"cd /opt/cerms\",
-              \"if [ ! -d .git ]; then git clone https://github.com/poornabhagya/cerms-erp-system.git . ; else git fetch origin main && git reset --hard origin/main ; fi\",
-              \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
-              \"if [ ! -f /opt/cerms/.env ]; then cp /opt/cerms/.env.example /opt/cerms/.env ; fi\",
-              \"chmod +x /opt/cerms/scripts/healthcheck_harness.sh || true\",
-              \"export AWS_ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)\",
-              \"export ECR_URL=\${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com\",
-              \"export ECR_IMAGE=\${ECR_URL}/cerms-web-repo:latest\",
-              \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin \${ECR_URL}\",
-              \"docker compose pull web celery || true\",
-              \"docker compose up -d --force-recreate mariadb redis\",
-              \"for i in \$(seq 1 30); do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done\",
-              \"docker compose up -d --force-recreate web celery nginx\",
-              \"docker compose restart nginx || true\",
-              \"sleep 5\",
-              \"docker exec cerms_web python manage.py migrate --noinput\",
-              \"docker exec cerms_web python manage.py seed_initial_data || true\",
-              \"docker exec cerms_web python manage.py collectstatic --noinput\",
-              \"/opt/cerms/scripts/healthcheck_harness.sh || true\",
-              \"docker cp /opt/cerms/scan_urls.py cerms_web:/app/scan_urls.py || true\",
-              \"docker exec cerms_web python scan_urls.py || true\",
-              \"docker cp cerms_web:/app/smoke_test_summary.json /opt/cerms/smoke_test_summary.json || true\",
-              \"cat /opt/cerms/smoke_test_summary.json || echo {\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\"
-            ]" \
+            --cli-input-json file://ssm_prod_payload.json \
             --query "Command.CommandId" \
             --output text)
 
