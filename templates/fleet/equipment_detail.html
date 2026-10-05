@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}{{ equipment.asset_code }} — Equipment Dossier{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'fleet:equipment_list' %}">Fleet</a></li>
+                <li class="breadcrumb-item active">{{ equipment.asset_code }}</li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-0">{{ equipment.equipment_name }} <span class="text-muted fw-normal">({{ equipment.asset_code }})</span></h3>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'fleet:equipment_update' asset_code=equipment.asset_code %}" class="btn btn-outline-primary">
+            <i class="bi bi-pencil me-1"></i> Edit Asset
+        </a>
+        <button type="button" class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#statusModal">
+            <i class="bi bi-arrow-repeat me-1"></i> Change Status
+        </button>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left Column: Specs & Rates -->
+    <div class="col-12 col-lg-8">
+        <!-- Asset Overview Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-info-circle text-primary me-2"></i> Technical Specifications</h5>
+                <div>
+                    {% if equipment.status == 'AVAILABLE' %}
+                        <span class="badge bg-success fs-6">Available</span>
+                    {% elif equipment.status == 'ON_RENT' %}
+                        <span class="badge bg-info text-dark fs-6">On Rent</span>
+                    {% elif equipment.status == 'RESERVED' %}
+                        <span class="badge bg-warning text-dark fs-6">Reserved</span>
+                    {% elif equipment.status == 'MAINTENANCE' %}
+                        <span class="badge bg-danger fs-6">Maintenance</span>
+                    {% elif equipment.status == 'BREAKDOWN' %}
+                        <span class="badge bg-danger fs-6">Breakdown</span>
+                    {% else %}
+                        <span class="badge bg-secondary fs-6">Inactive</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-3">
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Category</span>
+                        <span class="fw-semibold">{{ equipment.category.name }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Brand & Model</span>
+                        <span class="fw-semibold">{{ equipment.brand }} {{ equipment.model_number }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Serial / VIN</span>
+                        <span class="fw-semibold">{{ equipment.serial_number }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Manufacture Year</span>
+                        <span class="fw-semibold">{{ equipment.manufacture_year }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Purchase Cost</span>
+                        <span class="fw-semibold">Rs. {{ equipment.purchase_cost|floatformat:2 }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Purchase Date</span>
+                        <span class="fw-semibold">{{ equipment.purchase_date|date:"Y-m-d" }}</span>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <span class="text-muted small text-uppercase fw-bold d-block">Operating Hour Meter</span>
+                        <span class="fs-5 fw-bold text-primary">{{ equipment.current_hour_meter }} hrs</span>
+                    </div>
+                </div>
+
+                {% if equipment.specifications %}
+                <hr class="my-4">
+                <h6 class="fw-bold mb-3">Custom Parameters</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <tbody>
+                            {% for key, val in equipment.specifications.items %}
+                            <tr>
+                                <th class="w-35 bg-light">{{ key }}</th>
+                                <td>{{ val }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Rental Rates Card -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-tag text-success me-2"></i> Rental Tariff Card</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Daily Rate</th>
+                                <th>Hourly Rate</th>
+                                <th>Weekly Rate</th>
+                                <th>Monthly Rate</th>
+                                <th>Overtime Rate</th>
+                                <th>Min. Hours</th>
+                                <th>Effective From</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for rate in all_rates %}
+                            <tr {% if rate.is_active %}class="table-success bg-opacity-25"{% endif %}>
+                                <td class="fw-bold text-dark">Rs. {{ rate.daily_rate|floatformat:2 }}</td>
+                                <td>{% if rate.hourly_rate %}Rs. {{ rate.hourly_rate|floatformat:2 }}{% else %}-{% endif %}</td>
+                                <td>{% if rate.weekly_rate %}Rs. {{ rate.weekly_rate|floatformat:2 }}{% else %}-{% endif %}</td>
+                                <td>{% if rate.monthly_rate %}Rs. {{ rate.monthly_rate|floatformat:2 }}{% else %}-{% endif %}</td>
+                                <td>{% if rate.overtime_hourly_rate %}Rs. {{ rate.overtime_hourly_rate|floatformat:2 }}/hr{% else %}-{% endif %}</td>
+                                <td>{{ rate.minimum_rental_hours }} hrs</td>
+                                <td>{{ rate.effective_from|date:"Y-m-d" }}</td>
+                                <td>
+                                    {% if rate.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Archived</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4 text-muted">
+                                    No rental rate card assigned to this asset yet.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Image & Quick Actions -->
+    <div class="col-12 col-lg-4">
+        <!-- Asset Photo Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-image me-2"></i> Asset Photo</h6>
+            </div>
+            <div class="card-body text-center p-3">
+                {% if equipment.primary_image %}
+                    <img src="{{ equipment.primary_image.url }}" class="img-fluid rounded-3 border shadow-sm" alt="{{ equipment.equipment_name }}" style="max-height: 280px; object-fit: cover;">
+                {% else %}
+                    <div class="bg-light d-flex flex-column align-items-center justify-content-center rounded-3 p-5 text-muted border">
+                        <i class="bi bi-camera fs-1 mb-2"></i>
+                        <span>No Photo Uploaded</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Status Card -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2"></i> System Audit & Status</h6>
+            </div>
+            <div class="card-body p-3">
+                <ul class="list-group list-group-flush small">
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">Registered On:</span>
+                        <span class="fw-semibold">{{ equipment.created_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span class="text-muted">Last Updated:</span>
+                        <span class="fw-semibold">{{ equipment.updated_at|date:"Y-m-d H:i" }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Status Transition Modal -->
+<div class="modal fade" id="statusModal" tabindex="-1" aria-labelledby="statusModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'fleet:equipment_status_update' asset_code=equipment.asset_code %}">
+            {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="statusModalLabel">Change Equipment Status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Target Status</label>
+                        <select name="status" class="form-select" required>
+                            <option value="AVAILABLE" {% if equipment.status == 'AVAILABLE' %}selected{% endif %}>Available</option>
+                            <option value="RESERVED" {% if equipment.status == 'RESERVED' %}selected{% endif %}>Reserved</option>
+                            <option value="ON_RENT" {% if equipment.status == 'ON_RENT' %}selected{% endif %}>On Rent</option>
+                            <option value="MAINTENANCE" {% if equipment.status == 'MAINTENANCE' %}selected{% endif %}>Maintenance</option>
+                            <option value="BREAKDOWN" {% if equipment.status == 'BREAKDOWN' %}selected{% endif %}>Breakdown</option>
+                            <option value="INACTIVE" {% if equipment.status == 'INACTIVE' %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Audit Notes</label>
+                        <textarea name="notes" class="form-control" rows="3" placeholder="Reason for status modification..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -14,6 +14,9 @@ urlpatterns = [
     # Users, RBAC & Authentication (Web & API)
     path('', include('users.urls')),
 
+    # Fleet & Equipment Master Management
+    path('fleet/', include('fleet.urls')),
+
     # Root redirect to profile/login
     path('', RedirectView.as_view(pattern_name='users:profile', permanent=False), name='home_redirect'),
 ]
