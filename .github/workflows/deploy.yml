@@ -103,29 +103,6 @@ jobs:
           echo "=== PRODUCTION SMOKE TEST SUMMARY ==="
           cat ./prod_smoke_summary.json || echo '{"total_tested": 0, "crashes": 0}'
 
-      - name: Production Cloud Host Deployment Dispatch
-        id: dispatch-prod-ec2-deploy
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || secrets.EC2_SSH_KEY || secrets.PROD_SSH_KEY }}
-          HOST: "13.204.130.46"
-        run: |
-          echo "========================================================"
-          echo "CERMS Production Cloud Release Deployment Dispatch"
-          echo "========================================================"
-          if [ -n "$SSH_PRIVATE_KEY" ]; then
-            echo "[*] SSH private key detected. Initiating direct SSH deployment to $HOST..."
-            mkdir -p ~/.ssh
-            echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-            chmod 600 ~/.ssh/id_rsa
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 ubuntu@$HOST 'bash -s' < ./scripts/deploy_prod.sh || {
-              echo "[-] Warning: Direct SSH connection could not reach host (Check EC2 Security Group / Port 22)."
-            }
-          else
-            echo "[*] Direct SSH key not configured in secrets. Standardizing on validated ECR container pipeline."
-            echo "[+] Verified Production Release Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}"
-            echo "[+] ECR Tag: ${{ github.ref_name }} & latest"
-          fi
-
       - name: Parse Real Metrics, Emit Annotations and Generate Summary
         if: always()
         run: |

@@ -159,29 +159,6 @@ jobs:
           echo "=== SMOKE TEST SUMMARY ==="
           cat ./staging_smoke_summary.json || echo '{"total_tested": 0, "crashes": 0}'
 
-      - name: Cloud Host Deployment Dispatch
-        id: dispatch-ec2-deploy
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || secrets.EC2_SSH_KEY || secrets.STAGING_SSH_KEY }}
-          HOST: "65.2.35.206"
-        run: |
-          echo "========================================================"
-          echo "CERMS Staging Cloud Deployment Dispatch"
-          echo "========================================================"
-          if [ -n "$SSH_PRIVATE_KEY" ]; then
-            echo "[*] SSH private key detected. Initiating direct SSH deployment to $HOST..."
-            mkdir -p ~/.ssh
-            echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-            chmod 600 ~/.ssh/id_rsa
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 ubuntu@$HOST 'bash -s' < ./scripts/deploy_staging.sh || {
-              echo "[-] Warning: Direct SSH connection could not reach host (Check EC2 Security Group / Port 22)."
-            }
-          else
-            echo "[*] Direct SSH key not configured in secrets. Standardizing on validated ECR container pipeline."
-            echo "[+] Verified Staging Container Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:staging"
-            echo "[+] ECR Tag: staging & latest"
-          fi
-
       - name: Parse Metrics, Emit Annotations and Generate Summary
         if: always()
         run: |
