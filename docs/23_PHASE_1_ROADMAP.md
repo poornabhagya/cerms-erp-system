@@ -186,6 +186,15 @@ graph TD
 - **Service Function (`rentals/services.py`):**
   - `validate_customer_credit_limit(customer, new_quotation_amount)`: Checks if `outstanding_balance + new_amount > credit_limit` and raises a validation warning or forces management approval.
 
+#### 3.3 Frontend UI Implementation (Customer & Project Site Management)
+
+- **Views & Templates (`rentals/views.py` & `templates/rentals/`):**
+  - `CustomerListView` (`templates/rentals/customer_list.html`): Server-side DataTables with status badge filtering (`ACTIVE`, `BLOCKED`, `INACTIVE`), instant search by company name, contact, VAT, and quick credit exposure meters.
+  - `CustomerDetailView` (`templates/rentals/customer_detail.html`): 360-degree customer profile view displaying commercial summary, credit standing gauge, linked project sites list, and active rental history.
+  - `CustomerCreateUpdateView` (`templates/rentals/customer_form.html`): Responsive form with Crispy Bootstrap 5 styling, field validation, and dynamic credit limit warning.
+  - `ProjectSiteListView` (`templates/rentals/site_list.html`): Project site directory with customer organization filter, GPS mapping link, and resident supervisor contacts.
+  - `ProjectSiteCreateUpdateView` (`templates/rentals/site_form.html`): Site registration form with customer selector and GPS coordinate helper.
+
 ---
 
 ### Step 4: Rental Lifecycle Engine (`rentals` App — Part 2)
@@ -278,6 +287,17 @@ graph TD
   4. Transitions `RentalContract.status` &rarr; `RETURNED`.
   5. Automatically triggers invoice calculation in the `finance` service layer.
 
+#### 4.3 Frontend UI Implementation (Quotations, Contracts & Logistics UI)
+
+- **Views & Templates (`rentals/views.py` & `templates/rentals/`):**
+  - `QuotationListView` (`templates/rentals/quotation_list.html`): Quotation register with lifecycle status filter tabs (`DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `CONVERTED`), customer search, and PDF export shortcut.
+  - `QuotationDetailView` (`templates/rentals/quotation_detail.html`): Itemized commercial breakdown, customer credit exposure summary banner, approval/rejection action buttons for Managers, and 1-click "Convert to Contract" trigger.
+  - `QuotationCreateUpdateView` (`templates/rentals/quotation_form.html`): Dynamic quote builder with AJAX rate card lookup, live subtotal/tax/deposit calculation, and credit check warnings.
+  - `RentalContractListView` (`templates/rentals/contract_list.html`): Active rental contract registry with dispatch status badges, billing cycle indicators, and return schedule alerts.
+  - `RentalContractDetailView` (`templates/rentals/contract_detail.html`): Contract dashboard displaying equipment specs, agreed rates, physical dispatch log history, invoices generated, and signed PDF download.
+  - `DispatchCreateView` (`templates/rentals/dispatch_form.html`): Mobile-responsive machine dispatch checklist for yard officers logging opening hour-meters, fuel level gauge, and handover photos.
+  - `ReturnCreateView` (`templates/rentals/return_form.html`): Equipment check-in form capturing return hour-meter, excess hours computed in real-time, damage reporting toggle, and return condition photos.
+
 ---
 
 ### Step 5: Financial Management — Billing, Payments & Deposits (`finance` App)
@@ -354,6 +374,14 @@ graph TD
   2. Updates `Invoice.paid_amount` and marks status `PAID` or `PARTIALLY_PAID`.
   3. Decrements `Customer.current_outstanding_balance`.
 
+#### 5.3 Frontend UI Implementation (Invoicing, Payments & Escrow Ledger UI)
+
+- **Views & Templates (`finance/views.py` & `templates/finance/`):**
+  - `InvoiceListView` (`templates/finance/invoice_list.html`): Invoicing command center with payment status filters (`ALL`, `UNPAID`, `OVERDUE`, `PAID`), customer search, due date aging badges, and batch payment actions.
+  - `InvoiceDetailView` (`templates/finance/invoice_detail.html`): Itemized A4-styled web view of Tax Invoice with excess hours breakdown, deposit deductions, payment history timeline, and WeasyPrint PDF download button.
+  - `PaymentCreateView` / `InvoicePaymentModal` (`templates/finance/payment_modal.html`): Fast payment entry dialog with bank reference, method selection, and automatic real-time invoice/customer balance update.
+  - `SecurityDepositLedgerView` (`templates/finance/deposit_ledger.html`): Escrow ledger tracking deposits held, deductions for damage/excess usage, and pending refunds linked to rental contracts.
+
 ---
 
 ### Step 6: Interactive Availability Calendar & Visual Scheduling
@@ -381,6 +409,13 @@ graph TD
           status='AVAILABLE'
       ).exclude(asset_code__in=conflicting_contracts)
   ```
+
+#### 6.2 Frontend UI Implementation (Interactive Scheduling Grid & Timeline Visualizer)
+
+- **Views & Templates (`rentals/views.py` & `templates/rentals/`):**
+  - `AvailabilityCalendarView` (`templates/rentals/calendar.html`): FullCalendar.js dynamic timeline, month, and week schedule view visualizing equipment reservations and active dispatches.
+  - `EquipmentAvailabilityFilterModal` (`templates/rentals/calendar_modal.html`): Date range and machine category filter modal with direct "Create Quotation" launch button for unreserved assets.
+
 
 ---
 
