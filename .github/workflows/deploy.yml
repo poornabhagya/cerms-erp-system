@@ -65,9 +65,10 @@ jobs:
 
           # 1. Generate deployment bash script locally
           cat << 'SCRIPT_EOF' > deploy_prod.sh
-          #!/usr/bin/env bash
-          set -e
+          #!/bin/bash -xe
           export HOME=/root
+          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH
+
           mkdir -p /opt/cerms
           cd /opt/cerms
 
@@ -90,7 +91,7 @@ jobs:
           docker compose pull web celery || true
           docker compose up -d mariadb redis
 
-          for i in {1..30}; do
+          for i in $(seq 1 30); do
             if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then
               echo "MariaDB is ready"
               break
@@ -117,13 +118,21 @@ jobs:
           cat ./smoke_test_summary.json || echo '{"total_tested": 0, "crashes": 0}'
           SCRIPT_EOF
 
-          # 2. Package script into SSM parameters JSON via Python
+          # 2. Package script into robust Base64 SSM runner commands via Python
           python3 -c "
-          import json
-          with open('deploy_prod.sh', 'r') as f:
-              script_content = f.read()
+          import json, base64
+          with open('deploy_prod.sh', 'rb') as f:
+              b64_script = base64.b64encode(f.read()).decode('utf-8')
           params = {
-              'commands': [script_content]
+              'commands': [
+                  '#!/bin/bash',
+                  'export HOME=/root',
+                  'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH',
+                  f'echo \"{b64_script}\" | base64 -d > /tmp/cerms_deploy.sh',
+                  'chmod +x /tmp/cerms_deploy.sh',
+                  '/bin/bash -xe /tmp/cerms_deploy.sh 2>&1 | tee /tmp/cerms_deploy.log',
+                  'exit ${PIPESTATUS[0]}'
+              ]
           }
           with open('ssm_params.json', 'w') as f:
               json.dump(params, f, indent=2)
