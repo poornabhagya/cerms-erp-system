@@ -21,11 +21,14 @@ SECRET_KEY = config(
 
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config(
+ALLOWED_HOSTS = list(config(
     'ALLOWED_HOSTS',
     default='*',
     cast=Csv()
-)
+))
+if '*' not in ALLOWED_HOSTS and 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
+
 
 # Application Definition
 DJANGO_APPS = [

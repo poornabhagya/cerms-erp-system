@@ -9,7 +9,10 @@ from .base import *
 from decouple import config, Csv
 
 # Ensure ALLOWED_HOSTS allows all EC2 public IPs and domains if specified or defaulted
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*', cast=Csv())
+ALLOWED_HOSTS = list(config('ALLOWED_HOSTS', default='*', cast=Csv()))
+if '*' not in ALLOWED_HOSTS and 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
+
 
 # Ensure AWS environment specific apps list
 INSTALLED_APPS = list(INSTALLED_APPS)

@@ -12,6 +12,10 @@
 *.env
 !.env.example
 !telegram.env.example
+ssm_request.json
+staging_smoke_summary.json
+prod_smoke_summary.json
+smoke_test_summary.json
 
 # ------------------------------------------------------------------------------
 # 2. Virtual Environments & Python Runtime
