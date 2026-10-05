@@ -63,6 +63,9 @@ jobs:
         run: |
           echo "Deploying release ${{ github.ref_name }} to Production Host (${{ env.PROD_INSTANCE_ID }})..."
 
+          COMPOSE_B64=$(base64 -w 0 docker-compose.yml)
+          NGINX_B64=$(base64 -w 0 nginx.conf)
+          HEALTHCHECK_B64=$(base64 -w 0 scripts/healthcheck_harness.sh)
           SCAN_SCRIPT_B64=$(base64 -w 0 scan_urls.py)
 
           COMMAND_ID=$(aws ssm send-command \
@@ -72,13 +75,31 @@ jobs:
             --parameters "commands=[
               \"set -e\",
               \"export HOME=/root\",
-              \"mkdir -p /opt/cerms\",
+              \"mkdir -p /opt/cerms/certs /opt/cerms/scripts\",
               \"cd /opt/cerms\",
-              \"if [ ! -d .git ]; then git clone https://github.com/${{ github.repository }}.git . || true; fi\",
-              \"git config --system --add safe.directory /opt/cerms || true\",
-              \"git fetch --tags || true\",
-              \"git checkout ${{ github.ref_name }} || true\",
-              \"if [ ! -f .env ]; then cp .env.example .env; fi\",
+              \"echo ${COMPOSE_B64} | base64 -d > /opt/cerms/docker-compose.yml\",
+              \"echo ${NGINX_B64} | base64 -d > /opt/cerms/nginx.conf\",
+              \"echo ${HEALTHCHECK_B64} | base64 -d > /opt/cerms/scripts/healthcheck_harness.sh\",
+              \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
+              \"chmod +x /opt/cerms/scripts/healthcheck_harness.sh\",
+              \"cat << 'ENVEOF' > /opt/cerms/.env
+DJANGO_SETTINGS_MODULE=cerms_project.settings.aws
+SECRET_KEY=cerms-prod-secret-key-${{ github.sha }}
+DEBUG=False
+ALLOWED_HOSTS=*
+TIME_ZONE=Asia/Colombo
+USE_TZ=True
+DB_NAME=cerms_db
+DB_USER=cerms_user
+DB_PASSWORD=cerms_secure_password_2026
+DB_HOST=mariadb
+DB_PORT=3306
+USE_CELERY=True
+USE_S3=False
+REDIS_URL=redis://redis:6379/0
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+ENVEOF\",
               \"export AWS_ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)\",
               \"export ECR_URL=\${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com\",
               \"export ECR_IMAGE=\${ECR_URL}/cerms-web-repo:latest\",
@@ -93,9 +114,7 @@ jobs:
               \"docker exec cerms_web python manage.py migrate --noinput\",
               \"docker exec cerms_web python manage.py seed_initial_data || true\",
               \"docker exec cerms_web python manage.py collectstatic --noinput\",
-              \"chmod +x ./scripts/healthcheck_harness.sh\",
               \"./scripts/healthcheck_harness.sh\",
-              \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
               \"docker cp /opt/cerms/scan_urls.py cerms_web:/app/scan_urls.py || true\",
               \"docker exec cerms_web python scan_urls.py || true\",
               \"docker cp cerms_web:/app/smoke_test_summary.json /opt/cerms/smoke_test_summary.json || true\",

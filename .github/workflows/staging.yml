@@ -110,41 +110,64 @@ jobs:
         id: run-smoke-test
         run: |
           echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
+
+          COMPOSE_B64=$(base64 -w 0 docker-compose.yml)
+          NGINX_B64=$(base64 -w 0 nginx.conf)
+          HEALTHCHECK_B64=$(base64 -w 0 scripts/healthcheck_harness.sh)
+          SCAN_SCRIPT_B64=$(base64 -w 0 scan_urls.py)
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ env.STAGING_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "CERMS Staging Auto-Deploy & Smoke Test: ${{ github.sha }}" \
-            --parameters 'commands=[
-              "set -e",
-              "export HOME=/root",
-              "mkdir -p /opt/cerms",
-              "cd /opt/cerms",
-              "if [ ! -d .git ]; then git clone https://github.com/${{ github.repository }}.git . || true; fi",
-              "git config --system --add safe.directory /opt/cerms || true",
-              "git fetch origin main || true",
-              "git reset --hard origin/main || true",
-              "cp -f .env.example .env",
-              "export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)",
-              "export ECR_URL=${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com",
-              "export ECR_IMAGE=${ECR_URL}/cerms-web-repo:staging",
-              "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ECR_URL}",
-              "docker compose down -v || true",
-              "docker compose pull web celery || true",
-              "docker compose up -d mariadb redis",
-              "for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done",
-              "docker compose up -d --remove-orphans web celery nginx",
-              "docker compose restart nginx || true",
-              "sleep 5",
-              "docker exec cerms_web python manage.py migrate --noinput",
-              "docker exec cerms_web python manage.py seed_initial_data || true",
-              "docker exec cerms_web python manage.py collectstatic --noinput",
-              "chmod +x ./scripts/healthcheck_harness.sh",
-              "./scripts/healthcheck_harness.sh",
-              "docker cp scan_urls.py cerms_web:/app/scan_urls.py || true",
-              "docker exec cerms_web python scan_urls.py || true",
-              "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
-              "cat ./smoke_test_summary.json || echo {\"total_tested\": 0, \"crashes\": 0}"
-            ]' \
+            --parameters "commands=[
+              \"set -e\",
+              \"export HOME=/root\",
+              \"mkdir -p /opt/cerms/certs /opt/cerms/scripts\",
+              \"cd /opt/cerms\",
+              \"echo ${COMPOSE_B64} | base64 -d > /opt/cerms/docker-compose.yml\",
+              \"echo ${NGINX_B64} | base64 -d > /opt/cerms/nginx.conf\",
+              \"echo ${HEALTHCHECK_B64} | base64 -d > /opt/cerms/scripts/healthcheck_harness.sh\",
+              \"echo ${SCAN_SCRIPT_B64} | base64 -d > /opt/cerms/scan_urls.py\",
+              \"chmod +x /opt/cerms/scripts/healthcheck_harness.sh\",
+              \"cat << 'ENVEOF' > /opt/cerms/.env
+DJANGO_SETTINGS_MODULE=cerms_project.settings.aws
+SECRET_KEY=cerms-staging-secret-key-${{ github.sha }}
+DEBUG=True
+ALLOWED_HOSTS=*
+TIME_ZONE=Asia/Colombo
+USE_TZ=True
+DB_NAME=cerms_db
+DB_USER=cerms_user
+DB_PASSWORD=cerms_secure_password_2026
+DB_HOST=mariadb
+DB_PORT=3306
+USE_CELERY=True
+USE_S3=False
+REDIS_URL=redis://redis:6379/0
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+ENVEOF\",
+              \"export AWS_ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)\",
+              \"export ECR_URL=\${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com\",
+              \"export ECR_IMAGE=\${ECR_URL}/cerms-web-repo:staging\",
+              \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin \${ECR_URL}\",
+              \"docker compose pull web celery || true\",
+              \"docker compose up -d mariadb redis\",
+              \"for i in {1..30}; do if docker exec cerms_mariadb mariadb-admin ping --silent 2>/dev/null; then echo DB ready; break; fi; sleep 2; done\",
+              \"docker exec cerms_mariadb mariadb -u root -e \\\"CREATE DATABASE IF NOT EXISTS cerms_db; CREATE USER IF NOT EXISTS 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; ALTER USER 'cerms_user'@'%' IDENTIFIED BY 'cerms_secure_password_2026'; GRANT ALL PRIVILEGES ON cerms_db.* TO 'cerms_user'@'%'; FLUSH PRIVILEGES;\\\" || true\",
+              \"docker compose up -d --remove-orphans web celery nginx\",
+              \"docker compose restart nginx || true\",
+              \"sleep 5\",
+              \"docker exec cerms_web python manage.py migrate --noinput\",
+              \"docker exec cerms_web python manage.py seed_initial_data || true\",
+              \"docker exec cerms_web python manage.py collectstatic --noinput\",
+              \"./scripts/healthcheck_harness.sh\",
+              \"docker cp /opt/cerms/scan_urls.py cerms_web:/app/scan_urls.py || true\",
+              \"docker exec cerms_web python scan_urls.py || true\",
+              \"docker cp cerms_web:/app/smoke_test_summary.json /opt/cerms/smoke_test_summary.json || true\",
+              \"cat /opt/cerms/smoke_test_summary.json || echo {\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\"
+            ]" \
             --query "Command.CommandId" \
             --output text)
 
