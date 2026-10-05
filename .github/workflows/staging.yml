@@ -171,8 +171,10 @@ jobs:
             --parameters 'commands=[
               "mkdir -p /opt/cerms",
               "cd /opt/cerms",
-              "if [ ! -d .git ]; then git clone https://github.com/${{ github.repository }}.git . ; fi",
+              "if [ ! -d .git ]; then git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git . ; fi",
               "git config --system --add safe.directory /opt/cerms || true",
+              "git config --global --add safe.directory /opt/cerms || true",
+              "git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git || true",
               "git fetch origin main",
               "git reset --hard origin/main",
               "chmod +x ./scripts/deploy_staging.sh",
@@ -184,14 +186,14 @@ jobs:
           echo "SSM Command dispatched with ID: $COMMAND_ID (Timeout: 600 seconds)"
 
           echo "Polling SSM Command execution status on Staging EC2..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "${{ env.STAGING_INSTANCE_ID }}" \
               --query "Status" \
               --output text 2>/dev/null || echo "InProgress")
 
-            echo "  [Poll $i/30 - Elapsed: $((i*10))s] Status: $STATUS"
+            echo "  [Poll $i/60 - Elapsed: $((i*10))s] Status: $STATUS"
             if [[ "$STATUS" == "Success" || "$STATUS" == "Failed" || "$STATUS" == "Cancelled" || "$STATUS" == "TimedOut" ]]; then
               break
             fi
@@ -237,6 +239,10 @@ jobs:
           else:
               print("(No Standard Error content recorded)")
           print("=" * 70 + "\n")
+
+          if status != "Success" or response_code != 0:
+              print(f"FATAL: EC2 Staging Deployment failed with status '{status}' and exit code '{response_code}'!")
+              sys.exit(1)
           EOF
 
       - name: Parse Metrics, Emit Annotations and Generate Summary
