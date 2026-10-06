@@ -155,13 +155,13 @@ class QuotationForm(forms.ModelForm):
         widgets = {
             'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_start_date'}),
             'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_end_date'}),
-            'rate_applied': forms.NumberInput(attrs={'step': '100.00', 'min': '0', 'id': 'id_rate_applied'}),
-            'estimated_transport_cost': forms.NumberInput(attrs={'step': '100.00', 'min': '0', 'id': 'id_transport_cost'}),
-            'security_deposit_required': forms.NumberInput(attrs={'step': '1000.00', 'min': '0', 'id': 'id_deposit_required'}),
-            'discount_percentage': forms.NumberInput(attrs={'step': '0.5', 'min': '0', 'max': '100', 'id': 'id_discount_pct'}),
-            'subtotal_amount': forms.NumberInput(attrs={'step': '100.00', 'min': '0', 'id': 'id_subtotal'}),
-            'total_tax_amount': forms.NumberInput(attrs={'step': '100.00', 'min': '0', 'id': 'id_tax_amount'}),
-            'grand_total_amount': forms.NumberInput(attrs={'step': '100.00', 'min': '0', 'id': 'id_grand_total'}),
+            'rate_applied': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_rate_applied'}),
+            'estimated_transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_transport_cost'}),
+            'security_deposit_required': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_deposit_required'}),
+            'discount_percentage': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '100', 'id': 'id_discount_pct'}),
+            'subtotal_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_subtotal'}),
+            'total_tax_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_tax_amount'}),
+            'grand_total_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_grand_total'}),
         }
 
     def __init__(self, *args, **kwargs):
