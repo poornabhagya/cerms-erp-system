@@ -204,6 +204,42 @@ class QuotationForm(forms.ModelForm):
             )
         )
 
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get('start_date')
+        end_date = cleaned_data.get('end_date')
+        rate_applied = cleaned_data.get('rate_applied') or Decimal('0.00')
+        transport_cost = cleaned_data.get('estimated_transport_cost') or Decimal('0.00')
+        discount_pct = cleaned_data.get('discount_percentage') or Decimal('0.00')
+        subtotal = cleaned_data.get('subtotal_amount')
+        tax_amount = cleaned_data.get('total_tax_amount')
+
+        from .services import calculate_quotation_totals
+        totals = calculate_quotation_totals(
+            start_date=start_date,
+            end_date=end_date,
+            rate_applied=rate_applied,
+            estimated_transport_cost=transport_cost,
+            discount_percentage=discount_pct,
+            subtotal_amount=subtotal,
+            total_tax_amount=tax_amount,
+        )
+
+        if subtotal is None:
+            cleaned_data['subtotal_amount'] = totals['subtotal_amount']
+        if tax_amount is None:
+            cleaned_data['total_tax_amount'] = totals['total_tax_amount']
+
+        # Enforce Grand Total = (Base Tariff + Transport + VAT) - Discount
+        base_val = cleaned_data.get('subtotal_amount') or totals['subtotal_amount']
+        tax_val = cleaned_data.get('total_tax_amount') or totals['total_tax_amount']
+        discount_val = (base_val * Decimal(str(discount_pct))) / Decimal('100.00')
+
+        correct_grand_total = (base_val + Decimal(str(transport_cost)) + tax_val) - discount_val
+        cleaned_data['grand_total_amount'] = correct_grand_total.quantize(Decimal('0.01'))
+
+        return cleaned_data
+
 
 class RentalContractForm(forms.ModelForm):
     """

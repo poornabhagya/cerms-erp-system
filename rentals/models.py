@@ -310,6 +310,73 @@ class Quotation(TimeStampedModel):
         return 1
 
     @property
+    def rental_duration_days(self) -> int:
+        """Alias for duration_days for template compatibility."""
+        return self.duration_days
+
+    @property
+    def discount_amount(self) -> Decimal:
+        """Calculates commercial discount amount in LKR."""
+        base = self.subtotal_amount if self.subtotal_amount is not None else (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00')))
+        return ((base * (self.discount_percentage or Decimal('0.00'))) / Decimal('100.00')).quantize(Decimal('0.01'))
+
+    def calculate_totals(self) -> dict:
+        """
+        Calculates quote figures:
+        - Base Tariff (subtotal_amount)
+        - Discount Amount
+        - Transport
+        - VAT (total_tax_amount)
+        - Grand Total: (Base Tariff + Transport + VAT) - Discount
+        """
+        days = Decimal(self.duration_days)
+        rate = self.rate_applied or Decimal('0.00')
+        transport = self.estimated_transport_cost or Decimal('0.00')
+        discount_pct = self.discount_percentage or Decimal('0.00')
+
+        base_tariff = self.subtotal_amount if self.subtotal_amount is not None else (days * rate)
+        discount_amt = (base_tariff * discount_pct) / Decimal('100.00')
+
+        if self.total_tax_amount is not None and self.total_tax_amount > Decimal('0.00'):
+            tax_amt = self.total_tax_amount
+        else:
+            taxable = max(Decimal('0.00'), (base_tariff - discount_amt) + transport)
+            tax_amt = (taxable * Decimal('0.18')).quantize(Decimal('0.01'))
+
+        # Formula: (Base Tariff + Transport + VAT) - Discount
+        grand_total = (base_tariff + transport + tax_amt) - discount_amt
+
+        return {
+            'duration_days': self.duration_days,
+            'base_tariff': base_tariff.quantize(Decimal('0.01')),
+            'discount_amount': discount_amt.quantize(Decimal('0.01')),
+            'transport_cost': transport.quantize(Decimal('0.01')),
+            'tax_amount': tax_amt.quantize(Decimal('0.01')),
+            'grand_total_amount': grand_total.quantize(Decimal('0.01')),
+        }
+
+    def save(self, *args, **kwargs):
+        """Ensure financial totals adhere strictly to business calculation formulas."""
+        if self.subtotal_amount is None and self.rate_applied is not None:
+            self.subtotal_amount = Decimal(self.duration_days) * self.rate_applied
+
+        base_tariff = self.subtotal_amount or (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00')))
+        discount_amt = (base_tariff * (self.discount_percentage or Decimal('0.00'))) / Decimal('100.00')
+        transport = self.estimated_transport_cost or Decimal('0.00')
+
+        if self.total_tax_amount is None:
+            taxable = max(Decimal('0.00'), (base_tariff - discount_amt) + transport)
+            self.total_tax_amount = (taxable * Decimal('0.18')).quantize(Decimal('0.01'))
+
+        vat = self.total_tax_amount or Decimal('0.00')
+
+        # Auto-correct grand total if empty or if previously set to just the discount amount
+        if self.grand_total_amount is None or self.grand_total_amount == discount_amt:
+            self.grand_total_amount = ((base_tariff + transport + vat) - discount_amt).quantize(Decimal('0.01'))
+
+        super().save(*args, **kwargs)
+
+    @property
     def is_approved(self) -> bool:
         """Returns True if the quotation has passed managerial approval."""
         return self.status in [

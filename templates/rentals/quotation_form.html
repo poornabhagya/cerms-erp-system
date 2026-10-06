@@ -65,13 +65,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function calculateTotals() {
         if (!startDateInput || !endDateInput || !rateInput) return;
 
-        const start = new Date(startDateInput.value);
-        const end = new Date(endDateInput.value);
         let days = 1;
-
-        if (startDateInput.value && endDateInput.value && end >= start) {
-            const diffTime = Math.abs(end - start);
-            days = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+        if (startDateInput.value && endDateInput.value) {
+            const start = new Date(startDateInput.value);
+            const end = new Date(endDateInput.value);
+            if (end >= start) {
+                const diffTime = Math.abs(end - start);
+                days = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+            }
         }
 
         const rate = parseFloat(rateInput.value) || 0;
@@ -80,20 +81,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const baseRental = days * rate;
         const discountAmount = baseRental * (discountPct / 100);
-        const subtotal = Math.max(0, (baseRental - discountAmount) + transport);
         
-        // Statutory 18% VAT Standard
-        const vatRate = 0.18;
-        const tax = subtotal * vatRate;
-        const grandTotal = subtotal + tax;
-
-        if (subtotalInput && !subtotalInput.value) {
-            subtotalInput.value = subtotal.toFixed(2);
+        // Base Tariff
+        if (subtotalInput) {
+            subtotalInput.value = baseRental.toFixed(2);
         }
-        if (taxInput && !taxInput.value) {
+        
+        // Statutory 18% VAT Standard on (Base - Discount + Transport)
+        const vatRate = 0.18;
+        const taxable = Math.max(0, (baseRental - discountAmount) + transport);
+        const tax = taxable * vatRate;
+        if (taxInput) {
             taxInput.value = tax.toFixed(2);
         }
-        if (grandTotalInput && !grandTotalInput.value) {
+
+        // Grand Total = (Base Tariff + Transport + VAT) - Discount
+        const grandTotal = (baseRental + transport + tax) - discountAmount;
+        if (grandTotalInput) {
             grandTotalInput.value = grandTotal.toFixed(2);
         }
     }
@@ -104,6 +108,11 @@ document.addEventListener('DOMContentLoaded', function () {
             elem.addEventListener('change', calculateTotals);
         }
     });
+
+    // Auto-compute on initial page load if start, end and rate are present
+    if (startDateInput && endDateInput && rateInput && rateInput.value) {
+        calculateTotals();
+    }
 });
 </script>
 {% endblock %}

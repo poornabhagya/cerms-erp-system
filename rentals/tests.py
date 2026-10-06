@@ -1,9 +1,13 @@
+from datetime import date, datetime
 from decimal import Decimal
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 
-from .models import Customer, ProjectSite
-from .services import validate_customer_credit_limit
+from users.models import User
+from fleet.models import Category, Equipment
+from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
+from .services import validate_customer_credit_limit, calculate_quotation_totals
+from .forms import QuotationForm
 
 
 class CustomerModelTestCase(TestCase):
@@ -212,7 +216,75 @@ class QuotationContractModelTestCase(TestCase):
     def test_quotation_properties(self):
         self.assertEqual(str(self.quotation), "QT-2026-0001 - Sanken Construction (Draft)")
         self.assertEqual(self.quotation.duration_days, 10)
+        self.assertEqual(self.quotation.rental_duration_days, 10)
+        self.assertEqual(self.quotation.discount_amount, Decimal("21375.00"))  # 5% of 427,500
         self.assertFalse(self.quotation.is_approved)
+
+    def test_quotation_calculation_service(self):
+        # 10 days @ 45,000 = 450,000 base
+        # 5% discount = 22,500
+        # Transport = 50,000
+        # VAT 18% on (450,000 - 22,500 + 50,000) = 18% of 477,500 = 85,950
+        # Grand Total = (450,000 + 50,000 + 85,950) - 22,500 = 563,450.00
+        result = calculate_quotation_totals(
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("45000.00"),
+            estimated_transport_cost=Decimal("50000.00"),
+            discount_percentage=Decimal("5.00"),
+        )
+        self.assertEqual(result['duration_days'], 10)
+        self.assertEqual(result['base_tariff'], Decimal("450000.00"))
+        self.assertEqual(result['discount_amount'], Decimal("22500.00"))
+        self.assertEqual(result['estimated_transport_cost'], Decimal("50000.00"))
+        self.assertEqual(result['total_tax_amount'], Decimal("85950.00"))
+        self.assertEqual(result['grand_total_amount'], Decimal("563450.00"))
+        # Ensure grand_total is NOT equal to discount_amount
+        self.assertNotEqual(result['grand_total_amount'], result['discount_amount'])
+
+    def test_quotation_model_save_and_calculate_totals(self):
+        # Test Quotation model calculation
+        q = Quotation.objects.create(
+            quotation_no="QT-2026-9999",
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 10, 6),
+            end_date=date(2026, 10, 6),  # 1 day
+            rate_applied=Decimal("450000.00"),
+            rate_type=Quotation.RateType.DAILY,
+            estimated_transport_cost=Decimal("25000.00"),
+            discount_percentage=Decimal("5.00"),
+            total_tax_amount=Decimal("47500.00"),
+            grand_total_amount=Decimal("22500.00"),  # buggy input (just the discount)
+        )
+        # On save, grand_total_amount is corrected: (450,000 + 25,000 + 47,500) - 22,500 = 500,000.00
+        self.assertEqual(q.grand_total_amount, Decimal("500000.00"))
+        self.assertEqual(q.discount_amount, Decimal("22500.00"))
+
+    def test_quotation_form_clean_calculates_correct_grand_total(self):
+        form_data = {
+            'quotation_no': 'QT-2026-0002',
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'equipment': self.equipment.pk,
+            'start_date': '2026-11-01',
+            'end_date': '2026-11-10',
+            'rate_type': Quotation.RateType.DAILY,
+            'rate_applied': '45000.00',
+            'estimated_transport_cost': '50000.00',
+            'security_deposit_required': '100000.00',
+            'discount_percentage': '5.00',
+            'subtotal_amount': '450000.00',
+            'total_tax_amount': '85950.00',
+            'grand_total_amount': '22500.00',  # submitted buggy value
+            'status': Quotation.Status.DRAFT,
+        }
+        form = QuotationForm(data=form_data)
+        self.assertTrue(form.is_valid(), form.errors)
+        quotation = form.save()
+        # Form clean must correct grand_total_amount: (450,000 + 50,000 + 85,950) - 22,500 = 563,450.00
+        self.assertEqual(quotation.grand_total_amount, Decimal("563450.00"))
 
     def test_contract_and_dispatch_properties(self):
         self.assertEqual(str(self.contract), "CNT-2026-0001 - Sanken Construction (EQ-CAT-320-001)")

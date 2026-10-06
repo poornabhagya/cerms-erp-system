@@ -12,6 +12,69 @@ from fleet.models import Equipment
 from .models import Customer, Quotation, RentalContract, DispatchReturn
 
 
+def calculate_quotation_totals(
+    start_date=None,
+    end_date=None,
+    rate_applied: Decimal = Decimal('0.00'),
+    rate_type: str = 'DAILY',
+    estimated_transport_cost: Decimal = Decimal('0.00'),
+    discount_percentage: Decimal = Decimal('0.00'),
+    subtotal_amount: Optional[Decimal] = None,
+    total_tax_amount: Optional[Decimal] = None,
+    tax_rate: Decimal = Decimal('0.18'),
+) -> Dict[str, Decimal]:
+    """
+    Computes commercial quotation financial figures adhering strictly to the business rule:
+    Grand Total = (Base Tariff + Transport + VAT) - Discount
+
+    Parameters:
+    - start_date / end_date: Rental schedule to calculate duration in days
+    - rate_applied: Rate per unit
+    - estimated_transport_cost: Round-trip logistics
+    - discount_percentage: Percentage discount (0-100%)
+    - subtotal_amount: Base tariff if pre-set, otherwise duration_days * rate_applied
+    - total_tax_amount: Custom VAT/tax if pre-set, otherwise statutory 18% on (Base - Discount + Transport)
+    """
+    days = 1
+    if start_date and end_date:
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        if end_date >= start_date:
+            days = max(1, (end_date - start_date).days + 1)
+
+    rate = Decimal(str(rate_applied or 0))
+    transport = Decimal(str(estimated_transport_cost or 0))
+    discount_pct = Decimal(str(discount_percentage or 0))
+
+    if subtotal_amount is not None:
+        base_tariff = Decimal(str(subtotal_amount))
+    else:
+        base_tariff = Decimal(days) * rate
+
+    discount_amount = (base_tariff * discount_pct) / Decimal('100.00')
+
+    if total_tax_amount is not None and Decimal(str(total_tax_amount)) > Decimal('0.00'):
+        tax_amount = Decimal(str(total_tax_amount))
+    else:
+        taxable = max(Decimal('0.00'), (base_tariff - discount_amount) + transport)
+        tax_amount = (taxable * Decimal(str(tax_rate))).quantize(Decimal('0.01'))
+
+    # Formula: (Base Tariff + Transport + VAT) - Discount
+    grand_total = (base_tariff + transport + tax_amount) - discount_amount
+
+    return {
+        'duration_days': days,
+        'base_tariff': base_tariff.quantize(Decimal('0.01')),
+        'subtotal_amount': base_tariff.quantize(Decimal('0.01')),
+        'discount_amount': discount_amount.quantize(Decimal('0.01')),
+        'estimated_transport_cost': transport.quantize(Decimal('0.01')),
+        'total_tax_amount': tax_amount.quantize(Decimal('0.01')),
+        'grand_total_amount': grand_total.quantize(Decimal('0.01')),
+    }
+
+
 def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Decimal, raise_exception: bool = False) -> Dict[str, Any]:
     """
     Evaluates customer creditworthiness, operational standing, and outstanding balance against
