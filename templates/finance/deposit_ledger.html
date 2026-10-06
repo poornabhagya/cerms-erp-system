@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}Security Deposit Escrow Ledger — CERMS{% endblock %}
+
+{% block extra_css %}
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <h3 class="fw-bold mb-1"><i class="bi bi-safe text-warning me-2"></i> Security Deposit Escrow Ledger</h3>
+        <p class="text-muted small mb-0">Mandatory refundable escrow cash deposits, damage offsets, invoice deductions, and refund settlements.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'finance:invoice_list' %}" class="btn btn-outline-secondary shadow-sm">
+            <i class="bi bi-receipt me-1"></i> Invoices Register
+        </a>
+    </div>
+</div>
+
+<!-- Escrow KPI Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-primary">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-bold">Total Agreed Escrow</div>
+                    <div class="fs-4 fw-bold text-dark mt-1 font-monospace">Rs. {{ total_agreed|floatformat:2 }}</div>
+                    <small class="text-muted">{{ total_deposits_count }} Total Contracts Escrowed</small>
+                </div>
+                <div class="p-3 bg-primary bg-opacity-10 rounded-circle text-primary fs-3">
+                    <i class="bi bi-shield-lock"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-warning">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-bold">Currently Held in Escrow</div>
+                    <div class="fs-4 fw-bold text-warning mt-1 font-monospace">Rs. {{ total_held|floatformat:2 }}</div>
+                    <small class="text-warning fw-semibold"><i class="bi bi-lock me-1"></i>{{ held_count }} Active Deposits</small>
+                </div>
+                <div class="p-3 bg-warning bg-opacity-10 rounded-circle text-warning fs-3">
+                    <i class="bi bi-safe"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-danger">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-bold">Damage & Invoice Offsets</div>
+                    <div class="fs-4 fw-bold text-danger mt-1 font-monospace">Rs. {{ total_deducted|floatformat:2 }}</div>
+                    <small class="text-danger fw-semibold"><i class="bi bi-scissors me-1"></i>Settlement Deductions</small>
+                </div>
+                <div class="p-3 bg-danger bg-opacity-10 rounded-circle text-danger fs-3">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card p-3 border-0 shadow-sm bg-white border-start border-4 border-success">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="text-muted small text-uppercase fw-bold">Refunds Remitted</div>
+                    <div class="fs-4 fw-bold text-success mt-1 font-monospace">Rs. {{ total_refunded|floatformat:2 }}</div>
+                    <small class="text-success fw-semibold"><i class="bi bi-arrow-return-left me-1"></i>Returned to Clients</small>
+                </div>
+                <div class="p-3 bg-success bg-opacity-10 rounded-circle text-success fs-3">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="card shadow-sm mb-4 border-0">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-12 col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Search Deposit ID, Customer, Contract No...">
+                </div>
+            </div>
+            <div class="col-6 col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Escrow Statuses</option>
+                    <option value="HELD" {% if selected_status == 'HELD' %}selected{% endif %}>Held in Escrow</option>
+                    <option value="DEDUCTED" {% if selected_status == 'DEDUCTED' %}selected{% endif %}>Partially / Fully Deducted</option>
+                    <option value="REFUNDED" {% if selected_status == 'REFUNDED' %}selected{% endif %}>Fully Refunded</option>
+                    <option value="PENDING" {% if selected_status == 'PENDING' %}selected{% endif %}>Pending Collection</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-dark w-100"><i class="bi bi-funnel me-1"></i> Filter</button>
+                <a href="{% url 'finance:deposit_ledger' %}" class="btn btn-outline-secondary" title="Reset Filters"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Escrow Deposits Data Table Card -->
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="depositTable">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">Deposit ID</th>
+                        <th>Contract & Machine</th>
+                        <th>Client Organization</th>
+                        <th>Receipt Date</th>
+                        <th class="text-end">Agreed Escrow</th>
+                        <th class="text-end">Deducted (Offsets)</th>
+                        <th class="text-end">Refunded</th>
+                        <th class="text-end">Held Balance</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in deposit_list %}
+                    <tr>
+                        <td class="ps-4 font-monospace fw-bold text-dark">
+                            {{ d.deposit_id }}
+                        </td>
+                        <td>
+                            <a href="{% url 'rentals:contract_detail' contract_no=d.contract.contract_no %}" class="text-decoration-none font-monospace fw-semibold">
+                                {{ d.contract.contract_no }}
+                            </a>
+                            <div class="small text-muted">{{ d.contract.equipment.asset_code }}</div>
+                        </td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ d.customer.company_name }}</div>
+                            <small class="text-muted font-monospace">{{ d.customer.customer_code }}</small>
+                        </td>
+                        <td>
+                            <span class="small">{{ d.received_date|date:"Y-m-d"|default:"Pending" }}</span>
+                        </td>
+                        <td class="text-end font-monospace fw-semibold">
+                            Rs. {{ d.deposit_amount|floatformat:2 }}
+                        </td>
+                        <td class="text-end font-monospace text-danger">
+                            {% if d.deducted_amount > 0 %}- Rs. {{ d.deducted_amount|floatformat:2 }}{% else %}—{% endif %}
+                        </td>
+                        <td class="text-end font-monospace text-success">
+                            {% if d.refunded_amount > 0 %}Rs. {{ d.refunded_amount|floatformat:2 }}{% else %}—{% endif %}
+                        </td>
+                        <td class="text-end font-monospace fw-bold text-warning-emphasis">
+                            Rs. {{ d.remaining_held_amount|floatformat:2 }}
+                        </td>
+                        <td>
+                            {% if d.status == 'HELD' %}
+                            <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-2 py-1"><i class="bi bi-lock me-1"></i>Held in Escrow</span>
+                            {% elif d.status == 'DEDUCTED' %}
+                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1"><i class="bi bi-scissors me-1"></i>Deducted</span>
+                            {% elif d.status == 'REFUNDED' %}
+                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1"><i class="bi bi-check2-circle me-1"></i>Refunded</span>
+                            {% else %}
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary border px-2 py-1">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-4">
+                            {% if d.remaining_held_amount > 0 %}
+                            <a href="{% url 'finance:deposit_refund' deposit_id=d.deposit_id %}" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-arrow-return-left me-1"></i> Refund
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">Settled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center py-5 text-muted">
+                            <i class="bi bi-safe fs-1 d-block mb-3 text-secondary"></i>
+                            <h5>No Security Deposits Found</h5>
+                            <p class="small mb-0">Escrow deposits created for binding rental contracts will appear here.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if is_paginated %}
+    <div class="card-footer bg-white border-0 py-3">
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">Previous</a></li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_status %}&status={{ selected_status }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">Next</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- DataTables Scripts -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+<script>
+$(document).ready(function() {
+    $('#depositTable').DataTable({
+        paging: false,
+        info: false,
+        searching: false,
+        ordering: true,
+        order: [[0, 'desc']]
+    });
+});
+</script>
+{% endblock %}

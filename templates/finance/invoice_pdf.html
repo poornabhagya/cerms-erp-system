@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tax Invoice {{ invoice.invoice_no }} — CERMS</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 9pt;
+                color: #666666;
+            }
+            @bottom-left {
+                content: "CERMS Enterprise Heavy Machinery ERP — Generated on {{ now|date:'Y-m-d H:i' }}";
+                font-size: 8pt;
+                color: #888888;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #000000;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+
+        tr, .keep-together {
+            page-break-inside: avoid;
+        }
+
+        h1, h2, h3, h4, .invoice-header {
+            page-break-after: avoid;
+            margin-top: 0;
+        }
+
+        .header-table td {
+            vertical-align: top;
+        }
+
+        .company-title {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #0d6efd;
+            letter-spacing: 0.5px;
+            margin-bottom: 3px;
+        }
+
+        .company-subtitle {
+            font-size: 9pt;
+            color: #555555;
+            line-height: 1.3;
+        }
+
+        .invoice-title {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #212529;
+            text-align: right;
+            text-transform: uppercase;
+        }
+
+        .meta-box {
+            text-align: right;
+            font-size: 9pt;
+        }
+
+        .meta-box strong {
+            color: #111111;
+        }
+
+        .divider {
+            border-bottom: 2px solid #0d6efd;
+            margin: 15px 0 20px 0;
+        }
+
+        .info-card {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .info-card h4 {
+            font-size: 10pt;
+            color: #0d6efd;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        .items-table {
+            margin-top: 15px;
+            border: 1px solid #cccccc;
+        }
+
+        .items-table th {
+            background-color: #f1f4f9;
+            color: #000000;
+            font-weight: bold;
+            font-size: 9pt;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid #cccccc;
+            text-transform: uppercase;
+        }
+
+        .items-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #eeeeee;
+            font-size: 9.5pt;
+        }
+
+        .text-end {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .font-mono {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .totals-table {
+            width: 50%;
+            margin-left: auto;
+            margin-top: 10px;
+        }
+
+        .totals-table td {
+            padding: 5px 8px;
+            font-size: 9.5pt;
+        }
+
+        .totals-table tr.grand-total td {
+            background-color: #212529;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 11pt;
+            border-top: 2px solid #000000;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 8.5pt;
+            text-transform: uppercase;
+        }
+
+        .status-paid {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+        }
+
+        .status-unpaid {
+            background-color: #f8d7da;
+            color: #842029;
+            border: 1px solid #f5c2c7;
+        }
+
+        .status-partially-paid {
+            background-color: #fff3cd;
+            color: #664d03;
+            border: 1px solid #ffecb5;
+        }
+
+        .footer-note {
+            margin-top: 30px;
+            font-size: 8.5pt;
+            color: #666666;
+            border-top: 1px dashed #cccccc;
+            padding-top: 10px;
+        }
+
+        .signature-section {
+            margin-top: 40px;
+            width: 100%;
+        }
+
+        .signature-box {
+            width: 45%;
+            border-top: 1px solid #000000;
+            text-align: center;
+            font-size: 9pt;
+            padding-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Table -->
+    <table class="header-table">
+        <tr>
+            <td style="width: 55%;">
+                <div class="company-title">CERMS ERP SYSTEM</div>
+                <div class="company-subtitle">
+                    <strong>Construction Equipment Rental & Fleet Management</strong><br>
+                    No. 150, High Level Road, Colombo 06, Sri Lanka<br>
+                    Tel: +94 11 234 5678 | Email: billing@cerms-erp.lk<br>
+                    VAT Reg No: <strong>VAT-119874521-7000</strong>
+                </div>
+            </td>
+            <td style="width: 45%;">
+                <div class="invoice-title">COMMERCIAL TAX INVOICE</div>
+                <div class="meta-box" style="margin-top: 8px;">
+                    <strong>Invoice No:</strong> <span class="font-mono" style="font-size: 11pt; font-weight: bold; color: #0d6efd;">{{ invoice.invoice_no }}</span><br>
+                    <strong>Invoice Date:</strong> {{ invoice.invoice_date|date:"Y-m-d" }}<br>
+                    <strong>Payment Due Date:</strong> <span style="font-weight: bold; color: #d63384;">{{ invoice.due_date|date:"Y-m-d" }}</span><br>
+                    <strong>Contract Ref:</strong> <span class="font-mono">{{ contract.contract_no }}</span><br>
+                    <strong>Settlement Status:</strong> 
+                    <span class="status-badge {% if invoice.status == 'PAID' %}status-paid{% elif invoice.status == 'UNPAID' or invoice.status == 'OVERDUE' %}status-unpaid{% else %}status-partially-paid{% endif %}">
+                        {{ invoice.get_status_display }}
+                    </span>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="divider"></div>
+
+    <!-- Client & Project Site Details -->
+    <table>
+        <tr>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>Billed Client Organization</h4>
+                    <strong>{{ customer.company_name }}</strong> ({{ customer.customer_code }})<br>
+                    {{ customer.billing_address|linebreaksbr }}<br>
+                    <strong>Attn:</strong> {{ customer.contact_person }} ({{ customer.phone }})<br>
+                    <strong>Client VAT / TIN:</strong> {{ customer.vat_tax_number|default:"N/A" }}
+                </div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>Machinery Deployment & Timeline</h4>
+                    <strong>Asset Code:</strong> <span class="font-mono">{{ equipment.asset_code }}</span><br>
+                    <strong>Machine:</strong> {{ equipment.equipment_name }} ({{ equipment.brand }} {{ equipment.model_number }})<br>
+                    <strong>Project Site:</strong> {{ contract.project_site.project_name }} ({{ contract.project_site.site_address }})<br>
+                    <strong>Billing Period:</strong> {{ invoice.billing_period_start|date:"Y-m-d" }} to {{ invoice.billing_period_end|date:"Y-m-d" }}
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Commercial Line Items Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 8%;">#</th>
+                <th style="width: 47%;">Description / Commercial Charge</th>
+                <th style="width: 20%;" class="text-center">Basis / Quantity</th>
+                <th style="width: 25%;" class="text-end">Amount (LKR)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="text-center font-mono">01</td>
+                <td>
+                    <strong>Base Machinery Rental Tariff</strong><br>
+                    <small style="color: #666666;">Contract {{ contract.contract_no }} — Rate Tier: {{ contract.get_billing_cycle_display }}</small>
+                </td>
+                <td class="text-center font-mono">Agreed Rate: Rs. {{ contract.agreed_rate|floatformat:2 }}</td>
+                <td class="text-end font-mono">Rs. {{ invoice.rental_subtotal|floatformat:2 }}</td>
+            </tr>
+            {% if invoice.transport_charges > 0 %}
+            <tr>
+                <td class="text-center font-mono">02</td>
+                <td>
+                    <strong>Mobilization & Demobilization Transport</strong><br>
+                    <small style="color: #666666;">Round-trip heavy equipment low-bed logistics to project site</small>
+                </td>
+                <td class="text-center">Round-Trip Freight</td>
+                <td class="text-end font-mono">Rs. {{ invoice.transport_charges|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+            {% if invoice.excess_hours_charge > 0 %}
+            <tr>
+                <td class="text-center font-mono">03</td>
+                <td>
+                    <strong>Excess Machine Operating Hours Tariff</strong><br>
+                    <small style="color: #666666;">Operating hours exceeding contractual standard shift allowance</small>
+                </td>
+                <td class="text-center font-mono">Billable Excess Hours</td>
+                <td class="text-end font-mono">Rs. {{ invoice.excess_hours_charge|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+            {% if invoice.damage_charges > 0 %}
+            <tr>
+                <td class="text-center font-mono">04</td>
+                <td>
+                    <strong>Inspection Damage / Maintenance Assessments</strong><br>
+                    <small style="color: #666666;">Demobilization return checklist penalties, cleaning, or body repair</small>
+                </td>
+                <td class="text-center">Technical Assessment</td>
+                <td class="text-end font-mono">Rs. {{ invoice.damage_charges|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <!-- Commercial Financial Totals -->
+    <table style="width: 100%;">
+        <tr>
+            <td style="width: 45%; vertical-align: top;">
+                <div class="info-card" style="font-size: 8.5pt;">
+                    <h4 style="font-size: 9pt;">Bank Settlement Instructions</h4>
+                    <strong>Bank Name:</strong> Commercial Bank of Ceylon PLC<br>
+                    <strong>Account Name:</strong> CERMS Heavy Equipment Rentals (Pvt) Ltd<br>
+                    <strong>Account Number:</strong> 1000-4589-7712<br>
+                    <strong>Branch:</strong> Colombo Corporate Banking Branch<br>
+                    <strong>Swift Code:</strong> CCEYLKLX<br>
+                    <em>* Please quote Invoice Number <span class="font-mono">{{ invoice.invoice_no }}</span> in wire remarks.</em>
+                </div>
+            </td>
+            <td style="width: 5%;"></td>
+            <td style="width: 50%; vertical-align: top;">
+                <table class="totals-table">
+                    <tr>
+                        <td><strong>Taxable Charges Subtotal:</strong></td>
+                        <td class="text-end font-mono">Rs. {{ invoice.rental_subtotal|add:invoice.transport_charges|add:invoice.excess_hours_charge|add:invoice.damage_charges|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Statutory Taxes (18% VAT):</strong></td>
+                        <td class="text-end font-mono">Rs. {{ invoice.tax_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% if invoice.deposit_deducted > 0 %}
+                    <tr style="color: #198754;">
+                        <td><strong>Less: Security Deposit Offset:</strong></td>
+                        <td class="text-end font-mono">- Rs. {{ invoice.deposit_deducted|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr class="grand-total">
+                        <td style="color: #ffffff;"><strong>NET TOTAL PAYABLE:</strong></td>
+                        <td class="text-end font-mono" style="color: #ffc107;"><strong>Rs. {{ invoice.net_total_payable|floatformat:2 }}</strong></td>
+                    </tr>
+                    {% if invoice.paid_amount > 0 %}
+                    <tr style="color: #0d6efd;">
+                        <td><strong>Amount Paid / Credited:</strong></td>
+                        <td class="text-end font-mono">Rs. {{ invoice.paid_amount|floatformat:2 }}</td>
+                    </tr>
+                    <tr style="font-weight: bold; color: #dc3545;">
+                        <td><strong>OUTSTANDING BALANCE DUE:</strong></td>
+                        <td class="text-end font-mono">Rs. {{ invoice.balance_due|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Authorized Signatures -->
+    <table class="signature-section">
+        <tr>
+            <td class="signature-box">
+                Prepared By (Finance & Billing Officer)
+            </td>
+            <td style="width: 10%;"></td>
+            <td class="signature-box">
+                Authorized Signature & Official Corporate Seal
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer-note text-center">
+        This is a computer-generated commercial tax invoice issued under the authority of CERMS Enterprise ERP.<br>
+        Late payments beyond the due date of <strong>{{ invoice.due_date|date:"Y-m-d" }}</strong> are subject to standard commercial interest penalties.
+    </div>
+
+</body>
+</html>

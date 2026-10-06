@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Post Settlement Payment — CERMS{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'finance:invoice_list' %}">Invoices & Receivables</a></li>
+        {% if invoice %}
+        <li class="breadcrumb-item"><a href="{% url 'finance:invoice_detail' invoice_no=invoice.invoice_no %}">{{ invoice.invoice_no }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active" aria-current="page">Post Payment</li>
+    </ol>
+</nav>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-cash-stack text-success me-2"></i> Post Commercial Payment
+                </h5>
+                {% if invoice %}
+                <span class="badge bg-light text-primary border font-monospace">{{ invoice.invoice_no }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body p-4">
+                {% if invoice %}
+                <div class="alert alert-light border mb-4">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Client Organization:</span>
+                        <strong>{{ invoice.customer.company_name }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Net Invoice Payable:</span>
+                        <span class="font-monospace fw-semibold">Rs. {{ invoice.net_total_payable|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Current Balance Due:</span>
+                        <strong class="text-danger font-monospace fs-5">Rs. {{ invoice.balance_due|floatformat:2 }}</strong>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {% crispy form %}
+
+                    <div class="d-flex justify-content-between mt-4">
+                        {% if invoice %}
+                        <a href="{% url 'finance:invoice_detail' invoice_no=invoice.invoice_no %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Back to Invoice
+                        </a>
+                        {% else %}
+                        <a href="{% url 'finance:invoice_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Back to Invoices
+                        </a>
+                        {% endif %}
+                        <button type="submit" class="btn btn-success fw-bold px-4 shadow-sm">
+                            <i class="bi bi-check2-circle me-1"></i> Post Payment Settlement
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

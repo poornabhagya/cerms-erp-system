@@ -144,6 +144,29 @@
                             </li>
                         </ul>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="financeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-receipt me-1"></i> Finance & Billing
+                        </a>
+                        <ul class="dropdown-menu shadow-sm" aria-labelledby="financeDropdown">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'finance:invoice_list' %}">
+                                    <i class="bi bi-receipt me-2 text-primary"></i> Invoices & Receivables
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'finance:deposit_ledger' %}">
+                                    <i class="bi bi-safe me-2 text-warning"></i> Security Deposit Escrow
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'finance:payment_create' %}">
+                                    <i class="bi bi-cash-stack me-2 text-success"></i> Record Payment
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
                 </ul>
 
                 <div class="d-flex align-items-center gap-3">

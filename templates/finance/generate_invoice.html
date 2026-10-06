@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}Generate Final Rental Invoice — CERMS{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'finance:invoice_list' %}">Invoices & Receivables</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Generate Invoice</li>
+    </ol>
+</nav>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-file-earmark-plus text-primary me-2"></i> Generate Final Settlement Invoice
+                </h5>
+                {% if contract %}
+                <span class="badge bg-light text-primary border font-monospace">{{ contract.contract_no }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body p-4">
+                {% if contract %}
+                <div class="alert alert-light border mb-4">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Client:</span>
+                        <strong>{{ contract.customer.company_name }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Machine Asset:</span>
+                        <span>{{ contract.equipment.equipment_name }} (<span class="font-monospace">{{ contract.equipment.asset_code }}</span>)</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted small">Contract Duration:</span>
+                        <span>{{ contract.contract_start_date|date:"Y-m-d" }} to {{ contract.contract_end_date|date:"Y-m-d" }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Deposit Held in Escrow:</span>
+                        <strong class="text-success font-monospace">Rs. {{ contract.deposit_paid|floatformat:2 }}</strong>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Rental Contract <span class="text-danger">*</span></label>
+                        {{ form.contract }}
+                        {% if form.contract.errors %}
+                        <div class="text-danger small mt-1">{{ form.contract.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Payment Due Date <span class="text-danger">*</span></label>
+                        {{ form.due_date }}
+                        {% if form.due_date.errors %}
+                        <div class="text-danger small mt-1">{{ form.due_date.errors }}</div>
+                        {% endif %}
+                        <small class="text-muted">Defaults to standard Net 30 days.</small>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small">Excess Hours Hourly Tariff (LKR)</label>
+                            {{ form.excess_hours_rate }}
+                            <small class="text-muted">Leave blank to use derived rate.</small>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small">Damage / Penalty Charges (LKR)</label>
+                            {{ form.damage_charges }}
+                            <small class="text-muted">From return inspection.</small>
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mb-4 p-3 bg-light rounded-3 border">
+                        {{ form.apply_security_deposit }}
+                        <label class="form-check-label fw-semibold ms-2" for="{{ form.apply_security_deposit.id_for_label }}">
+                            Automatically Offset Security Deposit
+                        </label>
+                        <div class="text-muted small ms-2">Deducts held cash deposit from the final settlement invoice total.</div>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'finance:invoice_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary fw-bold px-4 shadow-sm">
+                            <i class="bi bi-receipt me-1"></i> Generate Tax Invoice & PDF
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

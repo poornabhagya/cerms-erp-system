@@ -20,6 +20,9 @@ urlpatterns = [
     # Rentals & Customer Management
     path('rentals/', include('rentals.urls')),
 
+    # Finance, Invoicing & Payments
+    path('finance/', include('finance.urls')),
+
     # Root redirect to profile/login
     path('', RedirectView.as_view(pattern_name='users:profile', permanent=False), name='home_redirect'),
 ]

@@ -48,6 +48,16 @@
             </a>
         {% endif %}
 
+        {% if contract.invoices.exists %}
+            <a href="{% url 'finance:invoice_list' %}?q={{ contract.contract_no }}" class="btn btn-outline-primary shadow-sm">
+                <i class="bi bi-receipt me-1"></i> View Invoices ({{ contract.invoices.count }})
+            </a>
+        {% else %}
+            <a href="{% url 'finance:generate_contract_invoice' contract_no=contract.contract_no %}" class="btn btn-outline-primary shadow-sm">
+                <i class="bi bi-receipt me-1"></i> Generate Tax Invoice
+            </a>
+        {% endif %}
+
         {% if contract.quotation %}
             <a href="{% url 'rentals:quotation_detail' quotation_no=contract.quotation.quotation_no %}" class="btn btn-outline-secondary">
                 <i class="bi bi-file-earmark-text me-1"></i> View Quotation

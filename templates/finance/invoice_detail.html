@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice {{ invoice.invoice_no }} — CERMS{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb Navigation -->
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'finance:invoice_list' %}" class="text-decoration-none">Invoices & Receivables</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ invoice.invoice_no }}</li>
+    </ol>
+</nav>
+
+<!-- Page Header & Action Controls -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div>
+        <div class="d-flex align-items-center gap-2">
+            <h3 class="fw-bold mb-0 font-monospace text-dark">{{ invoice.invoice_no }}</h3>
+            {% if invoice.status == 'PAID' %}
+            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-2"><i class="bi bi-check2-circle me-1"></i>Settled & Paid</span>
+            {% elif invoice.status == 'PARTIALLY_PAID' %}
+            <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25 px-3 py-2"><i class="bi bi-pie-chart me-1"></i>Partially Paid</span>
+            {% elif invoice.status == 'OVERDUE' or invoice.is_overdue %}
+            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-3 py-2"><i class="bi bi-exclamation-octagon me-1"></i>Overdue</span>
+            {% else %}
+            <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 px-3 py-2">{{ invoice.get_status_display }}</span>
+            {% endif %}
+        </div>
+        <p class="text-muted small mb-0 mt-1">
+            Issued on {{ invoice.invoice_date|date:"Y-m-d" }} | Due Date: <strong class="{% if invoice.is_overdue %}text-danger{% else %}text-dark{% endif %} font-monospace">{{ invoice.due_date|date:"Y-m-d" }}</strong>
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'finance:invoice_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> All Invoices
+        </a>
+        <a href="{% url 'finance:invoice_pdf' invoice_no=invoice.invoice_no %}" target="_blank" class="btn btn-outline-danger shadow-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i> View A4 PDF
+        </a>
+        <a href="{% url 'finance:invoice_pdf' invoice_no=invoice.invoice_no %}?download=1" class="btn btn-danger shadow-sm">
+            <i class="bi bi-download me-1"></i> Download PDF
+        </a>
+        {% if invoice.balance_due > 0 %}
+        <button type="button" class="btn btn-success fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#paymentModal">
+            <i class="bi bi-cash-stack me-1"></i> Record Payment
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="row g-4">
+    <!-- Left Column: Itemized Financial Breakdown & Payment Ledger -->
+    <div class="col-12 col-lg-8">
+        
+        <!-- Commercial Tax Invoice Breakdown Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-receipt text-primary me-2"></i> Itemized Commercial Tax Invoice
+                </h5>
+                <span class="badge bg-light text-secondary border">Contract Ref: {{ contract.contract_no }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Line Item / Commercial Charge</th>
+                                <th>Basis / Tier</th>
+                                <th class="text-end pe-4">Amount (LKR)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="fw-semibold">Base Machinery Rental Tariff</div>
+                                    <small class="text-muted">Billing Cycle: {{ contract.get_billing_cycle_display }} ({{ invoice.billing_period_start|date:"Y-m-d" }} to {{ invoice.billing_period_end|date:"Y-m-d" }})</small>
+                                </td>
+                                <td>
+                                    <span class="font-monospace">Rs. {{ contract.agreed_rate|floatformat:2 }}</span>
+                                </td>
+                                <td class="text-end pe-4 font-monospace fw-semibold">
+                                    Rs. {{ invoice.rental_subtotal|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% if invoice.transport_charges > 0 %}
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="fw-semibold">Mobilization & Demobilization Transport</div>
+                                    <small class="text-muted">Round-trip heavy equipment low-bed logistics to project site</small>
+                                </td>
+                                <td>Round-Trip Freight</td>
+                                <td class="text-end pe-4 font-monospace">
+                                    Rs. {{ invoice.transport_charges|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if invoice.excess_hours_charge > 0 %}
+                            <tr class="table-warning bg-opacity-10">
+                                <td class="ps-4">
+                                    <div class="fw-semibold text-warning-emphasis">Excess Machine Operating Hours Tariff</div>
+                                    <small class="text-muted">Operating hours exceeding contractual standard shift allowance</small>
+                                </td>
+                                <td>Excess Meter Usage</td>
+                                <td class="text-end pe-4 font-monospace text-warning-emphasis fw-semibold">
+                                    Rs. {{ invoice.excess_hours_charge|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if invoice.damage_charges > 0 %}
+                            <tr class="table-danger bg-opacity-10">
+                                <td class="ps-4">
+                                    <div class="fw-semibold text-danger">Inspection Damage / Maintenance Penalty</div>
+                                    <small class="text-muted">Demobilization return checklist penalties, cleaning, or body repair</small>
+                                </td>
+                                <td>Technical Assessment</td>
+                                <td class="text-end pe-4 font-monospace text-danger fw-semibold">
+                                    Rs. {{ invoice.damage_charges|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="fw-semibold">Applicable Value Added Tax (VAT)</div>
+                                    <small class="text-muted">Statutory Corporate Tax (18% Standard Tier)</small>
+                                </td>
+                                <td>18.00% VAT</td>
+                                <td class="text-end pe-4 font-monospace">
+                                    Rs. {{ invoice.tax_amount|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% if invoice.deposit_deducted > 0 %}
+                            <tr class="table-success bg-opacity-10">
+                                <td class="ps-4 text-success">
+                                    <div class="fw-semibold">Security Deposit Escrow Offset</div>
+                                    <small class="text-success">Refundable cash deposit deducted against final settlement total</small>
+                                </td>
+                                <td>Escrow Offset</td>
+                                <td class="text-end pe-4 font-monospace text-success fw-bold">
+                                    - Rs. {{ invoice.deposit_deducted|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            <tr class="table-dark">
+                                <td class="ps-4 fw-bold fs-6">Net Total Commercial Value Payable</td>
+                                <td></td>
+                                <td class="text-end pe-4 font-monospace fw-bold fs-5 text-warning">
+                                    Rs. {{ invoice.net_total_payable|floatformat:2 }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Settlement Progress Bar Footer -->
+            <div class="card-footer bg-light p-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <span class="text-muted small text-uppercase fw-bold">Payment Realization:</span>
+                        <strong class="text-success ms-2 font-monospace">Rs. {{ invoice.paid_amount|floatformat:2 }}</strong>
+                        <span class="text-muted">of Rs. {{ invoice.net_total_payable|floatformat:2 }}</span>
+                    </div>
+                    <div>
+                        <span class="text-muted small text-uppercase fw-bold">Remaining Balance Due:</span>
+                        <strong class="fs-5 ms-2 font-monospace {% if invoice.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
+                            Rs. {{ invoice.balance_due|floatformat:2 }}
+                        </strong>
+                    </div>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ invoice.payment_progress_pct }}%;" aria-valuenow="{{ invoice.payment_progress_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payments Ledger / Receipt History Timeline Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-clock-history text-success me-2"></i> Payment Receipts & Settlements
+                </h5>
+                {% if invoice.balance_due > 0 %}
+                <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#paymentModal">
+                    <i class="bi bi-plus-circle me-1"></i> Add Payment
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Receipt / Payment ID</th>
+                                <th>Date</th>
+                                <th>Method</th>
+                                <th>Reference / Cheque No</th>
+                                <th>Recorded By</th>
+                                <th class="text-end pe-4">Amount Credited (LKR)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in payments %}
+                            <tr>
+                                <td class="ps-4 font-monospace fw-bold text-primary">
+                                    {{ p.payment_id }}
+                                </td>
+                                <td>{{ p.payment_date|date:"Y-m-d" }}</td>
+                                <td>
+                                    <span class="badge bg-light text-dark border">{{ p.get_payment_method_display }}</span>
+                                </td>
+                                <td class="font-monospace small">{{ p.reference_number|default:"—" }}</td>
+                                <td class="small text-muted">{{ p.recorded_by.get_full_name|default:p.recorded_by.username|default:"System" }}</td>
+                                <td class="text-end pe-4 font-monospace fw-bold text-success">
+                                    + Rs. {{ p.amount|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    <i class="bi bi-credit-card-2-front fs-2 d-block mb-2 text-secondary"></i>
+                                    <p class="mb-0 small">No payments recorded against this invoice yet.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Right Column: Customer & Contract Context Dossier -->
+    <div class="col-12 col-lg-4">
+        
+        <!-- Billed Customer Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-building text-primary me-2"></i> Client Organization</h5>
+            </div>
+            <div class="card-body p-4">
+                <h6 class="fw-bold text-dark mb-1">{{ customer.company_name }}</h6>
+                <div class="font-monospace text-muted small mb-3">{{ customer.customer_code }}</div>
+
+                <div class="mb-3">
+                    <span class="text-muted small d-block">Primary Contact & Phone:</span>
+                    <strong>{{ customer.contact_person }}</strong><br>
+                    <span class="text-muted">{{ customer.phone }}</span>
+                </div>
+
+                <div class="mb-3">
+                    <span class="text-muted small d-block">Corporate Billing Address:</span>
+                    <p class="small text-dark mb-0">{{ customer.billing_address|linebreaksbr }}</p>
+                </div>
+
+                <div class="p-3 bg-light rounded-3 border">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Approved Credit Limit:</span>
+                        <span class="font-monospace fw-semibold">Rs. {{ customer.credit_limit|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">Total Exposure Balance:</span>
+                        <span class="font-monospace fw-bold {% if customer.current_outstanding_balance > customer.credit_limit %}text-danger{% else %}text-dark{% endif %}">
+                            Rs. {{ customer.current_outstanding_balance|floatformat:2 }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Machinery & Contract Dossier Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-success me-2"></i> Machine & Deployment</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <div class="p-3 bg-light rounded-3 text-center border">
+                        <i class="bi bi-gear-wide-connected fs-2 text-primary"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold text-dark mb-0">{{ equipment.equipment_name }}</h6>
+                        <span class="badge bg-secondary font-monospace">{{ equipment.asset_code }}</span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <span class="text-muted small d-block">Designated Project Site:</span>
+                    <strong>{{ contract.project_site.project_name }}</strong><br>
+                    <small class="text-muted">{{ contract.project_site.site_address }}</small>
+                </div>
+
+                <div class="mb-3">
+                    <span class="text-muted small d-block">Rental Contract Reference:</span>
+                    <a href="{% url 'rentals:contract_detail' contract_no=contract.contract_no %}" class="font-monospace fw-semibold text-decoration-none">
+                        {{ contract.contract_no }} <i class="bi bi-box-arrow-up-right ms-1"></i>
+                    </a>
+                </div>
+
+                <div class="p-3 bg-light rounded-3 border">
+                    <div class="small text-muted mb-1">Billing Span:</div>
+                    <div class="fw-semibold small font-monospace">{{ invoice.billing_period_start|date:"Y-m-d" }} &rarr; {{ invoice.billing_period_end|date:"Y-m-d" }}</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Fast Payment Modal Dialog -->
+{% if invoice.balance_due > 0 %}
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold" id="paymentModalLabel">
+                    <i class="bi bi-cash-coin me-2"></i> Post Settlement Payment
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{% url 'finance:invoice_payment' invoice_no=invoice.invoice_no %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="modal-body p-4">
+                    <div class="alert alert-light border mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted small">Invoice Target:</span>
+                            <strong class="font-mono">{{ invoice.invoice_no }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between mt-1">
+                            <span class="text-muted small">Current Balance Due:</span>
+                            <strong class="text-danger font-mono">Rs. {{ invoice.balance_due|floatformat:2 }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Settlement Amount (LKR) <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0.01" max="{{ invoice.balance_due }}" name="amount" value="{{ invoice.balance_due }}" class="form-control font-monospace fs-5 text-success fw-bold" required>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small">Payment Date</label>
+                            <input type="date" name="payment_date" value="{{ today|date:'Y-m-d' }}" class="form-control" required>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small">Payment Method</label>
+                            <select name="payment_method" class="form-select" required>
+                                <option value="BANK_TRANSFER" selected>Bank Transfer / Wire</option>
+                                <option value="CHEQUE">Cheque</option>
+                                <option value="CASH">Cash</option>
+                                <option value="CARD">Credit / Debit Card</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Reference Number / Cheque No.</label>
+                        <input type="text" name="reference_number" class="form-control" placeholder="e.g. TXN-HNB-123456789">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Upload Receipt (Optional)</label>
+                        <input type="file" name="receipt_pdf" class="form-control" accept=".pdf,.png,.jpg,.jpeg">
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label fw-bold small">Accounting Notes</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="Accounting annotations, remitter details..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-bold px-4">
+                        <i class="bi bi-check2-circle me-1"></i> Confirm & Post Payment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
