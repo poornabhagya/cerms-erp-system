@@ -192,17 +192,6 @@
                             </div>
                         </td>
                     </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="9" class="text-center py-5 text-muted">
-                            <i class="bi bi-receipt fs-1 d-block mb-3 text-secondary"></i>
-                            <h5>No Invoices Found</h5>
-                            <p class="small mb-3">No invoices match your current search or filter criteria.</p>
-                            <a href="{% url 'rentals:contract_list' %}" class="btn btn-primary btn-sm">
-                                <i class="bi bi-shield-check me-1"></i> View Contracts to Generate Invoices
-                            </a>
-                        </td>
-                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -238,7 +227,13 @@ $(document).ready(function() {
         info: false,
         searching: false,
         ordering: true,
-        order: [[3, 'desc']]
+        order: [[3, 'desc']],
+        columnDefs: [
+            { orderable: false, targets: [8] }
+        ],
+        language: {
+            emptyTable: "No invoices found matching your current search or filter criteria."
+        }
     });
 });
 </script>
