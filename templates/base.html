@@ -127,6 +127,11 @@
                         </a>
                         <ul class="dropdown-menu shadow-sm" aria-labelledby="lifecycleDropdown">
                             <li>
+                                <a class="dropdown-item" href="{% url 'rentals:availability_calendar' %}">
+                                    <i class="bi bi-calendar-range me-2 text-warning"></i> Availability Calendar
+                                </a>
+                            </li>
+                            <li>
                                 <a class="dropdown-item" href="{% url 'rentals:quotation_list' %}">
                                     <i class="bi bi-file-earmark-text me-2 text-primary"></i> Quotation Register
                                 </a>

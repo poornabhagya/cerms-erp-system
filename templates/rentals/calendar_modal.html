@@ -1,0 +1,128 @@
+<!-- Equipment Availability Filter Modal & Event Detail Modal -->
+<!-- Reference: docs/23_PHASE_1_ROADMAP.md (Step 6.2) -->
+
+<!-- 1. Quick Equipment Availability & Fast Quotation Modal -->
+<div class="modal fade" id="availabilityCheckerModal" tabindex="-1" aria-labelledby="availabilityCheckerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title d-flex align-items-center" id="availabilityCheckerModalLabel">
+                    <i class="bi bi-search me-2 text-warning"></i> Check Equipment Availability & Fast Quote
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="availabilityCheckForm" class="row g-3 mb-4 bg-light p-3 rounded border">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold text-uppercase text-muted">Rental Start Date</label>
+                        <input type="date" class="form-control" id="modalStartDate" name="start_date" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold text-uppercase text-muted">Rental End Date</label>
+                        <input type="date" class="form-control" id="modalEndDate" name="end_date" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold text-uppercase text-muted">Machinery Category</label>
+                        <select class="form-select" id="modalCategory" name="category_id">
+                            <option value="">All Categories</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }} ({{ cat.code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button type="submit" class="btn btn-primary px-4 shadow-sm" id="btnSearchAvailability">
+                            <i class="bi bi-funnel me-1"></i> Scan Fleet Availability
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Search Results Container -->
+                <div id="availabilityResultsContainer">
+                    <div class="text-center py-4 text-muted" id="initialAvailabilityState">
+                        <i class="bi bi-calendar-check fs-1 text-secondary mb-2 d-block"></i>
+                        <p class="mb-0">Select dates and click <strong>Scan Fleet Availability</strong> to query unreserved equipment assets.</p>
+                    </div>
+                    <div class="text-center py-5 d-none" id="availabilityLoadingState">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading available fleet...</span>
+                        </div>
+                        <p class="text-muted small mt-2">Checking conflict schedules and contract overlaps...</p>
+                    </div>
+                    <div id="availabilityResultsList" class="row g-3 d-none">
+                        <!-- Dynamic JS Populated Cards -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. Event Detail Inspection Modal -->
+<div class="modal fade" id="eventDetailModal" tabindex="-1" aria-labelledby="eventDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title d-flex align-items-center" id="eventDetailModalLabel">
+                    <i class="bi bi-info-circle me-2 text-info"></i> Schedule Event Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-3 border-bottom">
+                    <div>
+                        <span class="badge" id="eventBadge">Status</span>
+                        <h5 class="fw-bold mb-0 mt-1" id="eventMachineCode">Asset Code</h5>
+                        <small class="text-muted" id="eventMachineName">Machine Name</small>
+                    </div>
+                    <div class="text-end font-monospace">
+                        <div class="small text-muted text-uppercase">Daily Rate</div>
+                        <div class="fs-5 fw-bold text-dark" id="eventRate">Rs. 0.00</div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-6">
+                        <div class="p-2 bg-light rounded border">
+                            <small class="text-muted d-block text-uppercase" style="font-size: 0.75rem;">Start Date</small>
+                            <span class="fw-semibold font-monospace" id="eventStartDate">—</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 bg-light rounded border">
+                            <small class="text-muted d-block text-uppercase" style="font-size: 0.75rem;">End Date</small>
+                            <span class="fw-semibold font-monospace" id="eventEndDate">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="list-group list-group-flush border rounded mb-3">
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <span class="text-muted small">Category</span>
+                        <span class="fw-semibold small" id="eventCategory">—</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <span class="text-muted small">Client / Assignee</span>
+                        <span class="fw-semibold small text-primary" id="eventCustomer">—</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                        <span class="text-muted small">Project Site</span>
+                        <span class="fw-semibold small" id="eventSite">—</span>
+                    </div>
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2" id="eventRefRow">
+                        <span class="text-muted small">Reference No</span>
+                        <span class="fw-bold font-monospace small" id="eventRefNo">—</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light border-0 justify-content-between">
+                <a href="#" class="btn btn-primary w-100" id="eventActionBtn" target="_self">
+                    <i class="bi bi-box-arrow-up-right me-1"></i> Open Record Dossier
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

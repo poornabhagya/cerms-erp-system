@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from core.models import TimeStampedModel
+from fleet.managers import EquipmentManager
 
 
 class Category(TimeStampedModel):
@@ -51,6 +52,8 @@ class Equipment(TimeStampedModel):
         MAINTENANCE = 'MAINTENANCE', _('Maintenance')
         BREAKDOWN = 'BREAKDOWN', _('Breakdown')
         INACTIVE = 'INACTIVE', _('Inactive')
+
+    objects = EquipmentManager()
 
     asset_code = models.CharField(
         _("Asset Code"),

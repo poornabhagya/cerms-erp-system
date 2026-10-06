@@ -29,4 +29,12 @@ urlpatterns = [
     # Logistics (Dispatch & Return Handover) Endpoints
     path('contracts/<str:contract_no>/dispatch/', views.DispatchCreateView.as_view(), name='dispatch_create'),
     path('returns/<str:transaction_id>/', views.ReturnCreateView.as_view(), name='return_create'),
+
+    # Interactive Availability Calendar & Visual Scheduling
+    path('availability-calendar/', views.AvailabilityCalendarView.as_view(), name='availability_calendar'),
+    path('calendar/', views.AvailabilityCalendarView.as_view(), name='calendar'),
+    path('calendar-events/', views.CalendarEventsAPIView.as_view(), name='calendar_events_direct'),
+    path('api/calendar-events/', views.CalendarEventsAPIView.as_view(), name='calendar_events_api'),
+    path('check-availability/', views.EquipmentAvailabilityCheckAPIView.as_view(), name='check_availability_direct'),
+    path('api/check-availability/', views.EquipmentAvailabilityCheckAPIView.as_view(), name='check_availability_api'),
 ]

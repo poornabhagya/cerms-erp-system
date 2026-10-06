@@ -296,3 +296,195 @@ class QuotationContractModelTestCase(TestCase):
         self.dispatch_return.return_fuel_level = Decimal("85.00")
         self.assertEqual(self.dispatch_return.hours_operated, Decimal("75.50"))
 
+
+class AvailabilityCalendarAndConflictTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='rental_officer_test',
+            email='rental_test@cerms.com',
+            password='Password123!',
+            role=User.Role.RENTAL_OFFICER
+        )
+
+        self.category_excavator = Category.objects.create(
+            name="Excavators",
+            code="EXC",
+            description="Heavy Earthmoving Excavators"
+        )
+        self.category_crane = Category.objects.create(
+            name="Cranes",
+            code="CRN",
+            description="Mobile & Crawler Cranes"
+        )
+
+        self.eq_available = Equipment.objects.create(
+            asset_code="EQ-CAT-320-001",
+            equipment_name="Caterpillar 320D Excavator",
+            category=self.category_excavator,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT320D-TEST-001",
+            manufacture_year=2022,
+            purchase_cost=Decimal("45000000.00"),
+            purchase_date=date(2022, 1, 15),
+            current_hour_meter=Decimal("1250.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        self.eq_rented = Equipment.objects.create(
+            asset_code="EQ-KOM-PC200-001",
+            equipment_name="Komatsu PC200-8 Excavator",
+            category=self.category_excavator,
+            brand="Komatsu",
+            model_number="PC200-8",
+            serial_number="KOMPC200-TEST-002",
+            manufacture_year=2021,
+            purchase_cost=Decimal("40000000.00"),
+            purchase_date=date(2021, 6, 10),
+            current_hour_meter=Decimal("2100.00"),
+            status=Equipment.Status.ON_RENT
+        )
+
+        self.eq_maint = Equipment.objects.create(
+            asset_code="EQ-KOB-CK1000-001",
+            equipment_name="Kobelco CK1000 Crane",
+            category=self.category_crane,
+            brand="Kobelco",
+            model_number="CK1000",
+            serial_number="KOBCK1000-TEST-003",
+            manufacture_year=2020,
+            purchase_cost=Decimal("85000000.00"),
+            purchase_date=date(2020, 3, 20),
+            current_hour_meter=Decimal("3400.00"),
+            status=Equipment.Status.MAINTENANCE
+        )
+
+        self.customer = Customer.objects.create(
+            customer_code="CUST-2026-999",
+            company_name="Dimo Engineering Ltd",
+            contact_person="Nimal Bandara",
+            phone="+94773334455",
+            email="nimal@dimo.lk",
+            billing_address="Colombo 14",
+            credit_limit=Decimal("5000000.00"),
+            status=Customer.Status.ACTIVE
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-DIMO-001",
+            customer=self.customer,
+            project_name="Port City Marine Terminal",
+            site_address="Colombo Port City",
+            status=ProjectSite.Status.ACTIVE
+        )
+
+        # Quotation for eq_available in late November
+        self.quote_reserved = Quotation.objects.create(
+            quotation_no="QT-2026-9999",
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.eq_available,
+            start_date=date(2026, 11, 20),
+            end_date=date(2026, 11, 25),
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("270000.00"),
+            grand_total_amount=Decimal("318600.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+
+        # Active Contract for eq_rented from Nov 1 to Nov 15
+        self.contract_quote = Quotation.objects.create(
+            quotation_no="QT-2026-8888",
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.eq_rented,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("750000.00"),
+            grand_total_amount=Decimal("885000.00"),
+            status=Quotation.Status.CONVERTED
+        )
+
+        self.contract_active = RentalContract.objects.create(
+            contract_no="CNT-2026-9999",
+            quotation=self.contract_quote,
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.eq_rented,
+            contract_start_date=date(2026, 11, 1),
+            contract_end_date=date(2026, 11, 15),
+            agreed_rate=Decimal("50000.00"),
+            status=RentalContract.Status.ON_RENT
+        )
+
+    def test_overlap_detection_query(self):
+        from fleet.managers import get_available_equipment
+
+        # During Nov 1 - Nov 10: eq_rented is occupied with CNT-2026-9999, eq_maint is in maintenance
+        # eq_available is free
+        available_qs = get_available_equipment(
+            category_id=self.category_excavator.id,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10)
+        )
+        self.assertIn(self.eq_available, available_qs)
+        self.assertNotIn(self.eq_rented, available_qs)
+        self.assertNotIn(self.eq_maint, available_qs)
+
+        # In December 2026: both excavators are unreserved
+        dec_available = get_available_equipment(
+            category_id=self.category_excavator.id,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10)
+        )
+        # eq_rented status is ON_RENT so status='AVAILABLE' excludes it unless transitioned, eq_available is included
+        self.assertIn(self.eq_available, dec_available)
+
+    def test_availability_calendar_view(self):
+        self.client.force_login(self.user)
+        response = self.client.get('/rentals/availability-calendar/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'rentals/calendar.html')
+        self.assertIn('categories', response.context)
+        self.assertIn('total_equipment', response.context)
+        self.assertEqual(response.context['total_equipment'], 3)
+        self.assertEqual(response.context['available_count'], 1)
+        self.assertEqual(response.context['on_rent_count'], 1)
+        self.assertEqual(response.context['maintenance_count'], 1)
+
+    def test_calendar_events_api(self):
+        self.client.force_login(self.user)
+        response = self.client.get('/api/v1/rentals/calendar-events/?start=2026-10-01&end=2026-12-31')
+        self.assertEqual(response.status_code, 200)
+        events = response.json()
+        self.assertIsInstance(events, list)
+
+        # Should include contract event (Blue), quote reservation (Yellow), and maintenance (Red)
+        event_types = [e['extendedProps']['type'] for e in events]
+        self.assertIn('ON_RENT', event_types)
+        self.assertIn('RESERVED', event_types)
+        self.assertIn('MAINTENANCE', event_types)
+
+        contract_event = next(e for e in events if e['extendedProps']['type'] == 'ON_RENT')
+        self.assertEqual(contract_event['backgroundColor'], '#0d6efd')
+
+        quote_event = next(e for e in events if e['extendedProps']['type'] == 'RESERVED')
+        self.assertEqual(quote_event['backgroundColor'], '#ffc107')
+
+        maint_event = next(e for e in events if e['extendedProps']['type'] == 'MAINTENANCE')
+        self.assertEqual(maint_event['backgroundColor'], '#dc3545')
+
+    def test_equipment_availability_check_api(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            f'/rentals/api/check-availability/?start_date=2026-11-01&end_date=2026-11-10&category_id={self.category_excavator.id}'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['total_available'], 1)
+        self.assertEqual(data['equipment'][0]['asset_code'], self.eq_available.asset_code)
+        self.assertIn('create_quote_url', data['equipment'][0])
+
+

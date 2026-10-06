@@ -23,6 +23,9 @@ urlpatterns = [
     # Finance, Invoicing & Payments
     path('finance/', include('finance.urls')),
 
+    # REST API v1 Endpoints
+    path('api/v1/rentals/', include('rentals.urls_api')),
+
     # Root redirect to profile/login
     path('', RedirectView.as_view(pattern_name='users:profile', permanent=False), name='home_redirect'),
 ]

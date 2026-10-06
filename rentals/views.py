@@ -6,11 +6,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.views import View
-from django.views.generic import ListView, DetailView, CreateView, UpdateView
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, TemplateView
 
 from users.models import User
 from users.permissions import RoleRequiredMixin
-from fleet.models import Equipment
+from fleet.models import Equipment, Category
+from .api import CalendarEventsAPIView, EquipmentAvailabilityCheckAPIView
 from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
 from .forms import CustomerForm, ProjectSiteForm, QuotationForm, RentalContractForm, DispatchForm, ReturnForm
 from .services import (
@@ -381,7 +382,23 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
         current_year = timezone.now().year
         count = Quotation.objects.filter(quotation_no__startswith=f"QT-{current_year}-").count() + 1
         initial['quotation_no'] = f"QT-{current_year}-{count:04d}"
-        initial['start_date'] = timezone.now().date()
+        initial['start_date'] = self.request.GET.get('start_date') or timezone.now().date()
+        if self.request.GET.get('end_date'):
+            initial['end_date'] = self.request.GET.get('end_date')
+        if self.request.GET.get('equipment'):
+            try:
+                eq = Equipment.objects.get(asset_code=self.request.GET.get('equipment'))
+                initial['equipment'] = eq
+                rate_card = eq.rental_rates.filter(is_active=True).first()
+                if rate_card and rate_card.daily_rate:
+                    initial['rate_applied'] = rate_card.daily_rate
+            except Equipment.DoesNotExist:
+                pass
+        if self.request.GET.get('customer'):
+            try:
+                initial['customer'] = Customer.objects.get(customer_code=self.request.GET.get('customer'))
+            except Customer.DoesNotExist:
+                pass
         return initial
 
     def get_context_data(self, **kwargs):
@@ -667,3 +684,45 @@ class ReturnCreateView(RoleRequiredMixin, UpdateView):
         except ValidationError as e:
             messages.error(self.request, str(e))
             return self.form_invalid(form)
+
+
+# ==============================================================================
+# 5. AVAILABILITY CALENDAR & VISUAL SCHEDULING
+# ==============================================================================
+
+class AvailabilityCalendarView(RoleRequiredMixin, TemplateView):
+    """
+    Interactive FullCalendar & timeline visualizer mapping fleet availability,
+    contract on-rent engagements, accepted quotation reservations, and maintenance downtime.
+    Reference: docs/23_PHASE_1_ROADMAP.md (Step 6.2)
+    """
+    template_name = 'rentals/calendar.html'
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.ACCOUNTANT,
+        User.Role.STOREKEEPER,
+        User.Role.FIELD_OFFICER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        all_equipment = Equipment.objects.select_related('category').prefetch_related('rental_rates').all()
+
+        context['categories'] = Category.objects.all().order_by('name')
+        context['equipment_list'] = all_equipment.order_by('asset_code')
+        context['customers'] = Customer.objects.filter(status=Customer.Status.ACTIVE).order_by('company_name')
+
+        # KPI Fleet Counters
+        context['total_equipment'] = all_equipment.count()
+        context['available_count'] = all_equipment.filter(status=Equipment.Status.AVAILABLE).count()
+        context['on_rent_count'] = all_equipment.filter(status=Equipment.Status.ON_RENT).count()
+        context['reserved_count'] = all_equipment.filter(status=Equipment.Status.RESERVED).count()
+        context['maintenance_count'] = all_equipment.filter(
+            status__in=[Equipment.Status.MAINTENANCE, Equipment.Status.BREAKDOWN]
+        ).count()
+
+        return context
