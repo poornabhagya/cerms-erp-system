@@ -111,11 +111,17 @@ jobs:
 
       - name: Trigger SSM Deployment and Automated Smoke Test
         id: run-smoke-test
+        env:
+          STAGING_INSTANCE_ID: ${{ env.STAGING_INSTANCE_ID }}
+          GIT_SHA: ${{ github.sha }}
         run: |
-          echo "Deploying update to Staging Host (${{ env.STAGING_INSTANCE_ID }})..."
+          echo "Deploying update to Staging Host ($STAGING_INSTANCE_ID)..."
 
-          python3 -c '
+          python3 - << 'EOF'
           import json, os
+
+          staging_id = os.environ.get("STAGING_INSTANCE_ID", "")
+          git_sha = os.environ.get("GIT_SHA", "")
 
           commands = [
               "export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\"",
@@ -154,15 +160,15 @@ jobs:
               "./scripts/healthcheck_harness.sh || true",
               "docker exec cerms_web python scan_urls.py || true",
               "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
-              "cat ./smoke_test_summary.json || echo \"{\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\"",
+              "cat ./smoke_test_summary.json || echo '{\"total_tested\": 0, \"crashes\": 0}'",
               "# 6. Post-deployment dangling image cleanup",
               "docker image prune -f || true"
           ]
 
           payload = {
-              "InstanceIds": ["${{ env.STAGING_INSTANCE_ID }}"],
+              "InstanceIds": [staging_id],
               "DocumentName": "AWS-RunShellScript",
-              "Comment": "CERMS Staging Auto-Deploy & Smoke Test: ${{ github.sha }}",
+              "Comment": f"CERMS Staging Auto-Deploy & Smoke Test: {git_sha}",
               "Parameters": {
                   "commands": commands
               }
@@ -170,7 +176,7 @@ jobs:
 
           with open("ssm_staging_payload.json", "w") as f:
               json.dump(payload, f, indent=2)
-          '
+          EOF
 
           COMMAND_ID=$(aws ssm send-command \
             --cli-input-json file://ssm_staging_payload.json \
@@ -208,9 +214,10 @@ jobs:
             echo "$STDERR"
           fi
 
-          python3 -c "
-          import sys, json, re
-          text = '''$OUTPUT'''
+          export RAW_SSM_OUTPUT="$OUTPUT"
+          python3 - << 'EOF'
+          import sys, json, re, os
+          text = os.environ.get("RAW_SSM_OUTPUT", "")
           match = re.search(r'\{[\s\S]*\"total_tested\"[\s\S]*\}', text)
           if match:
               with open('staging_smoke_summary.json', 'w') as f:
@@ -218,7 +225,7 @@ jobs:
           else:
               with open('staging_smoke_summary.json', 'w') as f:
                   json.dump({'total_tested': 0, 'success_count': 0, 'protected_count': 0, 'crashes': 0, 'failed_routes': [], 'status': 'PASSED'}, f)
-          "
+          EOF
 
           if [ "$STATUS" != "Success" ]; then
             echo "::error title=Staging Deployment Failed::SSM execution returned status: $STATUS"

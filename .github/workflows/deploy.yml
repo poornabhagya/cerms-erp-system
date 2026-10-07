@@ -60,11 +60,17 @@ jobs:
 
       - name: Trigger SSM Deployment and Live Verification on Production EC2
         id: run-prod-deploy
+        env:
+          PROD_INSTANCE_ID: ${{ env.PROD_INSTANCE_ID }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          echo "Deploying release ${{ github.ref_name }} to Production Host (${{ env.PROD_INSTANCE_ID }})..."
+          echo "Deploying release $RELEASE_TAG to Production Host ($PROD_INSTANCE_ID)..."
 
-          python3 -c '
+          python3 - << 'EOF'
           import json, os
+
+          prod_id = os.environ.get("PROD_INSTANCE_ID", "")
+          release_tag = os.environ.get("RELEASE_TAG", "")
 
           commands = [
               "export PATH=\"/usr/local/bin:/usr/bin:/bin:$PATH\"",
@@ -103,15 +109,15 @@ jobs:
               "./scripts/healthcheck_harness.sh || true",
               "docker exec cerms_web python scan_urls.py || true",
               "docker cp cerms_web:/app/smoke_test_summary.json ./smoke_test_summary.json || true",
-              "cat ./smoke_test_summary.json || echo \"{\\\"total_tested\\\": 0, \\\"crashes\\\": 0}\"",
+              "cat ./smoke_test_summary.json || echo '{\"total_tested\": 0, \"crashes\": 0}'",
               "# 6. Post-deployment dangling image cleanup",
               "docker image prune -f || true"
           ]
 
           payload = {
-              "InstanceIds": ["${{ env.PROD_INSTANCE_ID }}"],
+              "InstanceIds": [prod_id],
               "DocumentName": "AWS-RunShellScript",
-              "Comment": "CERMS Prod Release Deploy: ${{ github.ref_name }}",
+              "Comment": f"CERMS Prod Release Deploy: {release_tag}",
               "Parameters": {
                   "commands": commands
               }
@@ -119,7 +125,7 @@ jobs:
 
           with open("ssm_prod_payload.json", "w") as f:
               json.dump(payload, f, indent=2)
-          '
+          EOF
 
           COMMAND_ID=$(aws ssm send-command \
             --cli-input-json file://ssm_prod_payload.json \
@@ -157,9 +163,10 @@ jobs:
             echo "$STDERR"
           fi
 
-          python3 -c "
-          import sys, json, re
-          text = '''$OUTPUT'''
+          export RAW_SSM_OUTPUT="$OUTPUT"
+          python3 - << 'EOF'
+          import sys, json, re, os
+          text = os.environ.get("RAW_SSM_OUTPUT", "")
           match = re.search(r'\{[\s\S]*\"total_tested\"[\s\S]*\}', text)
           if match:
               with open('prod_smoke_summary.json', 'w') as f:
@@ -167,7 +174,7 @@ jobs:
           else:
               with open('prod_smoke_summary.json', 'w') as f:
                   json.dump({'total_tested': 0, 'success_count': 0, 'protected_count': 0, 'crashes': 0, 'failed_routes': [], 'status': 'PASSED'}, f)
-          "
+          EOF
 
           echo "Extracted JSON Summary:"
           cat prod_smoke_summary.json
