@@ -38,6 +38,71 @@ class Category(TimeStampedModel):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+    @classmethod
+    def generate_code_from_name(cls, name: str, existing_pk=None) -> str:
+        """
+        Generates an uppercase 3-4 letter mnemonic code from a category name.
+        Guarantees uniqueness by appending disambiguation suffix if duplicate code exists.
+        Examples:
+        - 'Hydraulic Excavators' -> 'HEXC'
+        - 'Generators & Power' -> 'GENP'
+        - 'Excavators' -> 'EXCA'
+        - 'Heavy Earth Moving' -> 'HEM'
+        """
+        import re
+        if not name:
+            return "CAT"
+
+        # Remove special characters, keep letters, digits, and spaces
+        cleaned = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
+        stop_words = {'AND', 'OF', 'THE', 'FOR', 'IN', 'ON', 'WITH', 'A', 'AN'}
+        words = [w for w in cleaned.split() if w.upper() not in stop_words and len(w) > 0]
+
+        if not words:
+            words = [cleaned] if cleaned else ['CAT']
+
+        if len(words) >= 3:
+            candidate = ''.join(w[0] for w in words[:4]).upper()
+        elif len(words) == 2:
+            w1 = words[0]
+            w2 = words[1]
+            candidate = (w1[:2] + w2[:2]).upper()
+        elif len(words) == 1:
+            candidate = words[0][:4].upper() if len(words[0]) >= 3 else words[0].upper()
+        else:
+            candidate = "CAT"
+
+        if len(candidate) < 3 and len(cleaned) >= 3:
+            candidate = cleaned[:3].upper()
+
+        candidate = candidate[:15]
+
+        # Uniqueness verification
+        qs = cls.objects.filter(code=candidate)
+        if existing_pk:
+            qs = qs.exclude(pk=existing_pk)
+
+        if not qs.exists():
+            return candidate
+
+        # Disambiguate if collision
+        suffix = 2
+        while True:
+            disambiguated = f"{candidate[:10]}-{suffix}"
+            q_check = cls.objects.filter(code=disambiguated)
+            if existing_pk:
+                q_check = q_check.exclude(pk=existing_pk)
+            if not q_check.exists():
+                return disambiguated
+            suffix += 1
+
+    def save(self, *args, **kwargs):
+        if not self.code and self.name:
+            self.code = self.generate_code_from_name(self.name, existing_pk=self.pk)
+        elif self.code:
+            self.code = self.code.upper().strip()
+        super().save(*args, **kwargs)
+
 
 class Equipment(TimeStampedModel):
     """

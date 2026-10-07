@@ -29,7 +29,7 @@
                 <h5 class="mb-0 fw-bold"><i class="bi bi-tags text-primary me-2"></i> Category Classification Details</h5>
             </div>
             <div class="card-body p-4">
-                <form method="post" novalidate>
+                <form method="post" id="categoryForm" novalidate>
                     {% csrf_token %}
 
                     {% if form.non_field_errors %}
@@ -49,12 +49,17 @@
                         </div>
 
                         <div class="col-12 col-md-4">
-                            <label class="form-label small fw-bold text-uppercase text-muted" for="{{ form.code.id_for_label }}">Category Code *</label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label small fw-bold text-uppercase text-muted mb-0" for="{{ form.code.id_for_label }}">Category Code *</label>
+                                <span class="badge bg-primary bg-opacity-10 text-primary small" id="codeSyncIndicator" style="cursor: pointer;" title="Click to regenerate from name">
+                                    <i class="bi bi-magic me-1"></i> Auto-Sync
+                                </span>
+                            </div>
                             {{ form.code }}
                             {% if form.code.errors %}
                             <div class="text-danger small mt-1">{{ form.code.errors.0 }}</div>
                             {% endif %}
-                            <small class="form-text text-muted">Short unique mnemonic slug (e.g., EXC, CRN, GEN).</small>
+                            <small class="form-text text-muted">Unique mnemonic slug (e.g., HEXC, MOCR, GEN).</small>
                         </div>
 
                         <div class="col-12">
@@ -82,4 +87,90 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const nameInput = document.getElementById('id_category_name') || document.querySelector('input[name="name"]');
+    const codeInput = document.getElementById('id_category_code') || document.querySelector('input[name="code"]');
+    const indicator = document.getElementById('codeSyncIndicator');
+    const isEdit = {{ is_edit|yesno:"true,false" }};
+    
+    // Auto-sync active by default on create if code is empty
+    let isAutoSync = !isEdit && (!codeInput.value || codeInput.value.trim() === '');
+
+    function generateMnemonicCode(name) {
+        if (!name || !name.trim()) return '';
+
+        // Strip non-alphanumeric except spaces
+        const cleaned = name.replace(/[^a-zA-Z0-9\s]/g, ' ').trim();
+        const stopWords = new Set(['AND', 'OF', 'THE', 'FOR', 'IN', 'ON', 'WITH', 'A', 'AN', '&']);
+        const words = cleaned.split(/\s+/).filter(w => w.length > 0 && !stopWords.has(w.toUpperCase()));
+
+        if (words.length === 0) {
+            return cleaned.slice(0, 4).toUpperCase();
+        }
+
+        if (words.length >= 3) {
+            // First letter of first 4 meaningful words (e.g. "Heavy Earth Moving" -> "HEM")
+            return words.slice(0, 4).map(w => w[0]).join('').toUpperCase();
+        } else if (words.length === 2) {
+            // First 2 letters of word 1 + first 2 letters of word 2 (e.g. "Hydraulic Excavators" -> "HEXC", "Mobile Cranes" -> "MOCR")
+            const w1 = words[0];
+            const w2 = words[1];
+            return (w1.slice(0, 2) + w2.slice(0, 2)).toUpperCase();
+        } else {
+            // Single word -> first 3 to 4 letters (e.g. "Excavators" -> "EXCA" or "EXC")
+            const w = words[0];
+            return w.length >= 3 ? w.slice(0, 4).toUpperCase() : w.toUpperCase();
+        }
+    }
+
+    function updateIndicator() {
+        if (!indicator) return;
+        if (isAutoSync) {
+            indicator.className = 'badge bg-primary bg-opacity-10 text-primary small';
+            indicator.innerHTML = '<i class="bi bi-magic me-1"></i> Auto-Sync';
+        } else {
+            indicator.className = 'badge bg-secondary bg-opacity-10 text-secondary small';
+            indicator.innerHTML = '<i class="bi bi-pencil me-1"></i> Manual (Click to Auto-fill)';
+        }
+    }
+
+    if (nameInput && codeInput) {
+        // Real-time listener on Category Name input
+        nameInput.addEventListener('input', function() {
+            if (isAutoSync) {
+                const generated = generateMnemonicCode(this.value);
+                codeInput.value = generated;
+            }
+        });
+
+        // If user manually modifies the code, disengage auto-sync
+        codeInput.addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                isAutoSync = false;
+                updateIndicator();
+            } else {
+                isAutoSync = true;
+                codeInput.value = generateMnemonicCode(nameInput.value);
+                updateIndicator();
+            }
+        });
+
+        // Click indicator to force re-generate from name
+        if (indicator) {
+            indicator.addEventListener('click', function() {
+                isAutoSync = true;
+                codeInput.value = generateMnemonicCode(nameInput.value);
+                updateIndicator();
+                codeInput.focus();
+            });
+        }
+    }
+
+    updateIndicator();
+});
+</script>
 {% endblock %}

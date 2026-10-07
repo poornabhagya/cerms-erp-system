@@ -122,3 +122,31 @@ class CategoryViewTests(TestCase):
         # Field officer should be denied with 403 Forbidden
         self.assertEqual(response.status_code, 403)
 
+    def test_category_auto_code_generation_algorithm(self):
+        # 1. Test model-level generator method
+        code_exc = Category.generate_code_from_name("Hydraulic Excavators")
+        self.assertEqual(code_exc, "HEXC")
+
+        code_gen = Category.generate_code_from_name("Generators & Power")
+        self.assertEqual(code_gen, "GENP")
+
+        code_hem = Category.generate_code_from_name("Heavy Earth Moving")
+        self.assertEqual(code_hem, "HEM")
+
+        # 2. Test auto-code creation via form with blank code
+        self.client.force_login(self.workshop_user)
+        post_data = {
+            'name': 'Compaction Rollers',
+            'code': '',  # Left blank to test auto-generation
+            'description': 'Smooth drum and padfoot rollers'
+        }
+        res = self.client.post('/fleet/categories/create/', data=post_data)
+        self.assertEqual(res.status_code, 302)
+        cat = Category.objects.get(name='Compaction Rollers')
+        self.assertEqual(cat.code, 'CORO')
+
+        # 3. Test uniqueness disambiguation
+        code_collision = Category.generate_code_from_name("Compaction Rollers")
+        self.assertTrue(code_collision.startswith('CORO-'))
+
+

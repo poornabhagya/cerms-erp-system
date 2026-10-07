@@ -14,13 +14,28 @@ class CategoryForm(forms.ModelForm):
         model = Category
         fields = ['name', 'code', 'description']
         widgets = {
-            'name': forms.TextInput(attrs={'placeholder': 'e.g. Hydraulic Excavators', 'class': 'form-control'}),
-            'code': forms.TextInput(attrs={'placeholder': 'e.g. EXC', 'class': 'form-control', 'style': 'text-transform: uppercase;'}),
-            'description': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Detailed notes on equipment types included in this category...', 'class': 'form-control'}),
+            'name': forms.TextInput(attrs={
+                'placeholder': 'e.g. Hydraulic Excavators',
+                'class': 'form-control',
+                'id': 'id_category_name',
+                'autocomplete': 'off',
+            }),
+            'code': forms.TextInput(attrs={
+                'placeholder': 'e.g. EXC (Auto-generated from Name)',
+                'class': 'form-control font-monospace text-uppercase',
+                'id': 'id_category_code',
+                'style': 'text-transform: uppercase;',
+            }),
+            'description': forms.Textarea(attrs={
+                'rows': 4,
+                'placeholder': 'Detailed notes on equipment types included in this category...',
+                'class': 'form-control',
+            }),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['code'].required = False  # Allows automatic generation if empty
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -33,9 +48,35 @@ class CategoryForm(forms.ModelForm):
             ),
         )
 
+    def clean_name(self):
+        name = self.cleaned_data.get('name', '').strip()
+        if not name:
+            raise forms.ValidationError(_("Category name is required."))
+        qs = Category.objects.filter(name__iexact=name)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(_(f"A category named '{name}' already exists."))
+        return name
+
     def clean_code(self):
-        code = self.cleaned_data.get('code', '')
-        return code.upper().strip()
+        code = self.cleaned_data.get('code', '').upper().strip()
+        name = self.cleaned_data.get('name', '').strip()
+
+        if not code and name:
+            code = Category.generate_code_from_name(name, existing_pk=self.instance.pk)
+
+        if not code:
+            raise forms.ValidationError(_("Category code is required or could not be auto-generated."))
+
+        qs = Category.objects.filter(code=code)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(_(f"A category with code '{code}' already exists. Please choose a unique code."))
+
+        return code
+
 
 
 class EquipmentForm(forms.ModelForm):
