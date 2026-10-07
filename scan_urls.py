@@ -37,6 +37,9 @@ for u in all_urls:
 
 print(f"\n[+] Total CERMS static routes identified: {len(static_urls)}")
 
+import gc
+from django.db import reset_queries, close_old_connections
+
 client = Client()
 errors = []
 success_count = 0
@@ -44,6 +47,8 @@ protected_count = 0
 
 for url in static_urls:
     try:
+        close_old_connections()
+        reset_queries()
         res = client.get(url)
         if res.status_code == 500:
             print(f"[-] CRASH 500: {url}")
@@ -66,6 +71,8 @@ for url in static_urls:
             "error": err_msg,
             "trace": " | ".join(stack)
         })
+
+gc.collect()
 
 total_tested = len(static_urls)
 crash_count = len(errors)
