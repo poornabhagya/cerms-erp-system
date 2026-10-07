@@ -9,6 +9,7 @@ from .views import (
     EquipmentCreateView,
     EquipmentUpdateView,
     EquipmentStatusUpdateView,
+    EquipmentAssetCodeGenerateAPIView,
 )
 
 app_name = 'fleet'
@@ -18,6 +19,9 @@ urlpatterns = [
     path('categories/', CategoryListView.as_view(), name='category_list'),
     path('categories/create/', CategoryCreateView.as_view(), name='category_create'),
     path('categories/<str:code>/edit/', CategoryUpdateView.as_view(), name='category_update'),
+
+    # API Endpoints
+    path('api/generate-asset-code/', EquipmentAssetCodeGenerateAPIView.as_view(), name='api_generate_asset_code'),
 
     # Equipment Master Endpoints
     path('', EquipmentListView.as_view(), name='equipment_list'),

@@ -100,12 +100,37 @@ class EquipmentForm(forms.ModelForm):
             'specifications',
         ]
         widgets = {
+            'asset_code': forms.TextInput(attrs={
+                'class': 'form-control font-monospace text-uppercase',
+                'placeholder': 'Auto-generated (e.g. EQ-EXC-CAT-320D-001)',
+                'id': 'id_asset_code',
+            }),
+            'equipment_name': forms.TextInput(attrs={
+                'placeholder': 'e.g. Caterpillar 320D Hydraulic Excavator',
+                'class': 'form-control',
+                'id': 'id_equipment_name',
+            }),
+            'category': forms.Select(attrs={
+                'class': 'form-select',
+                'id': 'id_category_select',
+            }),
+            'brand': forms.TextInput(attrs={
+                'placeholder': 'e.g. Caterpillar, Komatsu, JCB',
+                'class': 'form-control',
+                'id': 'id_brand_input',
+            }),
+            'model_number': forms.TextInput(attrs={
+                'placeholder': 'e.g. 320D, PC200-8, JS205',
+                'class': 'form-control',
+                'id': 'id_model_input',
+            }),
             'purchase_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'specifications': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"Operating Weight": "22 Ton", "Engine Power": "150 HP"}'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['asset_code'].required = False  # Auto-generated if not provided
         self.helper = FormHelper()
         self.helper.form_tag = False  # Allows enclosing in an overarching form for inline formsets
         self.helper.layout = Layout(
@@ -140,6 +165,27 @@ class EquipmentForm(forms.ModelForm):
                 css_class='bg-white p-4 rounded-3 border mb-4'
             )
         )
+
+    def clean_asset_code(self):
+        asset_code = self.cleaned_data.get('asset_code', '').upper().strip()
+        category = self.cleaned_data.get('category')
+        brand = self.cleaned_data.get('brand', '').strip()
+        model_number = self.cleaned_data.get('model_number', '').strip()
+
+        if not asset_code and category and brand and model_number:
+            asset_code = Equipment.generate_asset_code(category, brand, model_number, existing_pk=self.instance.pk)
+
+        if not asset_code:
+            raise forms.ValidationError(_("Asset Code is required or could not be auto-generated. Please check Category, Brand, and Model Number."))
+
+        qs = Equipment.objects.filter(asset_code=asset_code)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(_(f"An equipment asset with code '{asset_code}' already exists."))
+
+        return asset_code
+
 
 
 class RentalRateForm(forms.ModelForm):

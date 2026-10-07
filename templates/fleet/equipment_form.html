@@ -23,13 +23,18 @@
         </div>
 
         <!-- Master Form -->
-        <form method="post" enctype="multipart/form-data" novalidate>
+        <form method="post" enctype="multipart/form-data" id="equipmentForm" novalidate>
             {% csrf_token %}
 
             <!-- Equipment Master Information -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white py-3">
+            <div class="card shadow-sm mb-4 border-0">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold"><i class="bi bi-card-checklist text-primary me-2"></i> Equipment Asset Information</h5>
+                    {% if not is_edit %}
+                    <span class="badge bg-primary bg-opacity-10 text-primary" id="assetCodeStatusBadge">
+                        <i class="bi bi-magic me-1"></i> Auto-Code Generation Active
+                    </span>
+                    {% endif %}
                 </div>
                 <div class="card-body p-4">
                     {% crispy form %}
@@ -37,7 +42,7 @@
             </div>
 
             <!-- Rental Rate Tariff Card Formset -->
-            <div class="card shadow-sm mb-4">
+            <div class="card shadow-sm mb-4 border-0">
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold"><i class="bi bi-tag text-success me-2"></i> Rental Rate Tariff Card</h5>
                     <span class="badge bg-light text-muted border">Optional / Multiple Tiers</span>
@@ -114,4 +119,145 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const isEdit = {{ is_edit|yesno:"true,false" }};
+    const categorySelect = document.getElementById('id_category_select') || document.querySelector('select[name="category"]');
+    const brandInput = document.getElementById('id_brand_input') || document.querySelector('input[name="brand"]');
+    const modelInput = document.getElementById('id_model_input') || document.querySelector('input[name="model_number"]');
+    const assetCodeInput = document.getElementById('id_asset_code') || document.querySelector('input[name="asset_code"]');
+    const nameInput = document.getElementById('id_equipment_name') || document.querySelector('input[name="equipment_name"]');
+    const statusBadge = document.getElementById('assetCodeStatusBadge');
+
+    let debounceTimer = null;
+    let isNameManuallyEdited = isEdit || (nameInput && nameInput.value.trim() !== '');
+
+    if (nameInput) {
+        nameInput.addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                isNameManuallyEdited = true;
+            }
+        });
+    }
+
+    const brandPrefixes = {
+        'CATERPILLAR': 'CAT',
+        'CAT': 'CAT',
+        'KOMATSU': 'KOM',
+        'KOBELCO': 'KOB',
+        'HITACHI': 'HIT',
+        'HYUNDAI': 'HYU',
+        'DOOSAN': 'DOO',
+        'VOLVO': 'VOL',
+        'JCB': 'JCB',
+        'CUMMINS': 'CUM',
+        'PERKINS': 'PER',
+        'BOMAG': 'BOM',
+        'HAMM': 'HAM',
+        'SAKAI': 'SAK',
+        'DYNAPAC': 'DYN',
+        'TADANO': 'TAD',
+        'KATO': 'KAT',
+        'LIEBHERR': 'LIE',
+        'SANY': 'SNY',
+        'XCMG': 'XCM',
+        'BOBCAT': 'BOB',
+        'KUBOTA': 'KUB',
+        'YANMAR': 'YAN',
+        'INGERSOLL RAND': 'ING',
+        'ATLAS COPCO': 'ATL'
+    };
+
+    function getBrandPrefix(brand) {
+        if (!brand) return 'GEN';
+        const clean = brand.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        if (brandPrefixes[clean]) return brandPrefixes[clean];
+        return clean.length >= 3 ? clean.substring(0, 3) : clean.padEnd(3, 'X');
+    }
+
+    function computeClientSideCode() {
+        if (!categorySelect || !brandInput || !modelInput || !assetCodeInput) return;
+        
+        const catText = categorySelect.options[categorySelect.selectedIndex]?.text || '';
+        let catCode = 'GEN';
+        const catMatch = catText.match(/\(([^)]+)\)/);
+        if (catMatch) {
+            catCode = catMatch[1].toUpperCase();
+        } else if (catText) {
+            catCode = catText.replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase();
+        }
+
+        const brandPrefix = getBrandPrefix(brandInput.value);
+        const modelSlug = modelInput.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 8) || 'STD';
+
+        return `EQ-${catCode}-${brandPrefix}-${modelSlug}-001`;
+    }
+
+    function autoUpdateAssetCode() {
+        if (isEdit) return; // Do not overwrite existing primary key in edit mode
+
+        const categoryId = categorySelect ? categorySelect.value : '';
+        const brand = brandInput ? brandInput.value.trim() : '';
+        const model = modelInput ? modelInput.value.trim() : '';
+
+        // Update equipment name if not manually modified
+        if (!isNameManuallyEdited && nameInput && (brand || model)) {
+            const catName = categorySelect && categorySelect.selectedIndex > 0 ? categorySelect.options[categorySelect.selectedIndex].text.replace(/\s*\([^)]*\)/, '') : '';
+            nameInput.value = `${brand} ${model} ${catName}`.trim();
+        }
+
+        if (!categoryId || !brand || !model) {
+            if (assetCodeInput && !assetCodeInput.value) {
+                assetCodeInput.placeholder = 'Auto-generated upon selecting Category, Brand & Model';
+            }
+            return;
+        }
+
+        // Instant local preview
+        const localCode = computeClientSideCode();
+        if (assetCodeInput && (!assetCodeInput.value || assetCodeInput.value.startsWith('EQ-'))) {
+            assetCodeInput.value = localCode;
+        }
+
+        // Debounced API call to retrieve exact sequence number from database
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            const params = new URLSearchParams({
+                category_id: categoryId,
+                brand: brand,
+                model_number: model
+            });
+
+            fetch(`/fleet/api/generate-asset-code/?${params.toString()}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.asset_code && assetCodeInput) {
+                        assetCodeInput.value = data.asset_code;
+                        if (statusBadge) {
+                            statusBadge.className = 'badge bg-success bg-opacity-10 text-success';
+                            statusBadge.innerHTML = `<i class="bi bi-check-circle me-1"></i> Code Verified: ${data.asset_code}`;
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.warn('Could not query real-time sequence number:', err);
+                });
+        }, 300);
+    }
+
+    if (!isEdit && categorySelect && brandInput && modelInput) {
+        categorySelect.addEventListener('change', autoUpdateAssetCode);
+        brandInput.addEventListener('input', autoUpdateAssetCode);
+        modelInput.addEventListener('input', autoUpdateAssetCode);
+
+        // Initial check if fields are prefilled
+        if (categorySelect.value && brandInput.value && modelInput.value) {
+            autoUpdateAssetCode();
+        }
+    }
+});
+</script>
 {% endblock %}

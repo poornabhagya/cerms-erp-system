@@ -297,3 +297,34 @@ class EquipmentStatusUpdateView(RoleRequiredMixin, View):
         except ValueError as e:
             messages.error(request, str(e))
             return redirect('fleet:equipment_detail', asset_code=equipment.asset_code)
+
+
+class EquipmentAssetCodeGenerateAPIView(RoleRequiredMixin, View):
+    """API endpoint to dynamically compute standard equipment asset code in real-time."""
+    allowed_roles = (
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+    )
+
+    def get(self, request, *args, **kwargs):
+        category_id = request.GET.get('category_id') or request.GET.get('category')
+        brand = request.GET.get('brand', '').strip()
+        model_number = request.GET.get('model_number', '').strip()
+
+        if not category_id or not brand or not model_number:
+            return JsonResponse({'success': False, 'message': 'Category, Brand, and Model are required.'}, status=400)
+
+        generated_code = Equipment.generate_asset_code(
+            category=category_id,
+            brand=brand,
+            model_number=model_number
+        )
+
+        return JsonResponse({
+            'success': True,
+            'asset_code': generated_code
+        })
+

@@ -150,3 +150,62 @@ class CategoryViewTests(TestCase):
         self.assertTrue(code_collision.startswith('CORO-'))
 
 
+class EquipmentAssetCodeGenerationTests(TestCase):
+    def setUp(self):
+        from users.models import User
+        self.workshop_user = User.objects.create_user(
+            username='workshop_tester',
+            email='workshop_tester@test.com',
+            password='StaffPass123!',
+            role=User.Role.WORKSHOP_MANAGER
+        )
+        self.category_exc = Category.objects.create(
+            name='Hydraulic Excavators',
+            code='EXC',
+            description='Excavators'
+        )
+
+    def test_asset_code_generation_format_and_sequence(self):
+        # 1. First asset for Category EXC, Brand Caterpillar, Model 320D
+        code_1 = Equipment.generate_asset_code(
+            category=self.category_exc,
+            brand="Caterpillar",
+            model_number="320D"
+        )
+        self.assertEqual(code_1, "EQ-EXC-CAT-320D-001")
+
+        # Save an equipment asset with code_1
+        Equipment.objects.create(
+            asset_code=code_1,
+            equipment_name="CAT 320D Excavator #1",
+            category=self.category_exc,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="SER-CAT-001",
+            manufacture_year=2023,
+            purchase_cost=Decimal("35000000.00"),
+            purchase_date=timezone.now().date(),
+            current_hour_meter=Decimal("100.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # 2. Second asset for same category, brand, and model should increment sequence to 002
+        code_2 = Equipment.generate_asset_code(
+            category=self.category_exc,
+            brand="Caterpillar",
+            model_number="320D"
+        )
+        self.assertEqual(code_2, "EQ-EXC-CAT-320D-002")
+
+    def test_asset_code_api_endpoint(self):
+        self.client.force_login(self.workshop_user)
+        response = self.client.get(
+            f'/fleet/api/generate-asset-code/?category_id={self.category_exc.id}&brand=Komatsu&model_number=PC200'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['asset_code'], "EQ-EXC-KOM-PC200-001")
+
+
+

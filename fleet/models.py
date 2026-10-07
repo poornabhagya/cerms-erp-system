@@ -205,6 +205,105 @@ class Equipment(TimeStampedModel):
     def __str__(self):
         return f"{self.asset_code} - {self.equipment_name} ({self.get_status_display()})"
 
+    @classmethod
+    def generate_asset_code(cls, category, brand: str, model_number: str, existing_pk=None) -> str:
+        """
+        Generates standard asset code according to format:
+        EQ-[Category_Code]-[Brand_Prefix]-[Model]-[Sequence_Number]
+        Example: EQ-EXC-CAT-320D-001
+        """
+        import re
+
+        # 1. Category Code
+        if hasattr(category, 'code'):
+            cat_code = category.code.upper().strip()
+        elif isinstance(category, (int, str)) and category:
+            try:
+                cat_obj = Category.objects.filter(
+                    models.Q(id=int(category)) if str(category).isdigit() else models.Q(code__iexact=str(category))
+                ).first()
+                cat_code = cat_obj.code.upper().strip() if cat_obj else 'GEN'
+            except Exception:
+                cat_code = 'GEN'
+        else:
+            cat_code = 'GEN'
+
+        # 2. Brand Prefix
+        brand_clean = re.sub(r'[^a-zA-Z0-9\s]', '', str(brand or '')).strip().upper()
+        known_brands = {
+            'CATERPILLAR': 'CAT',
+            'CAT': 'CAT',
+            'KOMATSU': 'KOM',
+            'KOBELCO': 'KOB',
+            'HITACHI': 'HIT',
+            'HYUNDAI': 'HYU',
+            'DOOSAN': 'DOO',
+            'VOLVO': 'VOL',
+            'JCB': 'JCB',
+            'CUMMINS': 'CUM',
+            'PERKINS': 'PER',
+            'BOMAG': 'BOM',
+            'HAMM': 'HAM',
+            'SAKAI': 'SAK',
+            'DYNAPAC': 'DYN',
+            'TADANO': 'TAD',
+            'KATO': 'KAT',
+            'LIEBHERR': 'LIE',
+            'SANY': 'SNY',
+            'XCMG': 'XCM',
+            'BOBCAT': 'BOB',
+            'KUBOTA': 'KUB',
+            'YANMAR': 'YAN',
+            'INGERSOLL RAND': 'ING',
+            'ATLAS COPCO': 'ATL',
+        }
+        if brand_clean in known_brands:
+            brand_prefix = known_brands[brand_clean]
+        else:
+            brand_prefix = re.sub(r'[^a-zA-Z0-9]', '', brand_clean)[:3].upper() if brand_clean else 'GEN'
+
+        if len(brand_prefix) < 2:
+            brand_prefix = (brand_clean + 'XX')[:3].upper() if brand_clean else 'GEN'
+
+        # 3. Model Slug
+        model_slug = re.sub(r'[^a-zA-Z0-9]', '', str(model_number or '')).upper()[:8]
+        if not model_slug:
+            model_slug = 'STD'
+
+        base_prefix = f"EQ-{cat_code}-{brand_prefix}-{model_slug}"
+
+        # 4. Sequence Number Calculation
+        existing_codes = cls.objects.filter(asset_code__startswith=f"{base_prefix}-")
+        if existing_pk:
+            existing_codes = existing_codes.exclude(pk=existing_pk)
+
+        max_seq = 0
+        for eq in existing_codes:
+            code_parts = eq.asset_code.split('-')
+            if code_parts:
+                last_part = code_parts[-1]
+                if last_part.isdigit():
+                    seq_num = int(last_part)
+                    if seq_num > max_seq:
+                        max_seq = seq_num
+
+        next_seq = max_seq + 1
+        candidate_code = f"{base_prefix}-{next_seq:03d}"
+
+        # Guarantee unique primary key
+        while cls.objects.filter(asset_code=candidate_code).exclude(pk=existing_pk if existing_pk else None).exists():
+            next_seq += 1
+            candidate_code = f"{base_prefix}-{next_seq:03d}"
+
+        return candidate_code
+
+    def save(self, *args, **kwargs):
+        if not self.asset_code and self.category and self.brand and self.model_number:
+            self.asset_code = self.generate_asset_code(self.category, self.brand, self.model_number, existing_pk=self.pk)
+        elif self.asset_code:
+            self.asset_code = self.asset_code.upper().strip()
+        super().save(*args, **kwargs)
+
     @property
     def is_available(self) -> bool:
         """Returns True if the machine is physically ready for rental dispatch."""
