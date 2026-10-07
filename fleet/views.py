@@ -328,3 +328,48 @@ class EquipmentAssetCodeGenerateAPIView(RoleRequiredMixin, View):
             'asset_code': generated_code
         })
 
+
+class EquipmentDeleteView(RoleRequiredMixin, View):
+    """
+    Administrator-only view to safely delete an equipment asset.
+    Strictly restricted to ADMINISTRATOR role per docs/03_ROLES_AND_PERMISSIONS.md.
+    Enforces relational integrity checks against active/historical contracts, quotations, and dispatches.
+    """
+    allowed_roles = (User.Role.ADMINISTRATOR,)
+
+    def post(self, request, asset_code):
+        equipment = get_object_or_404(Equipment, asset_code=asset_code)
+
+        # 1. Relational Safety Check
+        from django.apps import apps
+        RentalContract = apps.get_model('rentals', 'RentalContract', require_ready=False)
+        Quotation = apps.get_model('rentals', 'Quotation', require_ready=False)
+        DispatchReturn = apps.get_model('rentals', 'DispatchReturn', require_ready=False)
+
+        has_contracts = RentalContract.objects.filter(equipment=equipment).exists() if RentalContract else False
+        has_quotations = Quotation.objects.filter(equipment=equipment).exists() if Quotation else False
+        has_dispatches = DispatchReturn.objects.filter(equipment=equipment).exists() if DispatchReturn else False
+
+        if has_contracts or has_quotations or has_dispatches:
+            messages.error(
+                request,
+                f"Cannot delete equipment '{equipment.asset_code}' because it is linked to active or historical "
+                f"rental contracts, quotations, or dispatch records. To remove it from active availability, "
+                f"change its operational status to 'INACTIVE' instead."
+            )
+            return redirect('fleet:equipment_detail', asset_code=equipment.asset_code)
+
+        # 2. Safe deletion
+        with transaction.atomic():
+            equipment.rental_rates.all().delete()
+            eq_code = equipment.asset_code
+            eq_name = equipment.equipment_name
+            equipment.delete()
+
+        messages.success(
+            request,
+            f"Equipment asset '{eq_code}' ({eq_name}) was successfully deleted from Fleet Master."
+        )
+        return redirect('fleet:equipment_list')
+
+

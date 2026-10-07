@@ -41,6 +41,63 @@
                 </div>
             </div>
 
+            <!-- Technical Specifications Dynamic Key-Value Builder -->
+            <div class="card shadow-sm mb-4 border-0">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0 fw-bold"><i class="bi bi-sliders text-info me-2"></i> Technical Specifications</h5>
+                        <small class="text-muted">Define machine parameters dynamically using key-value pairs (e.g. Operating Weight, Engine Power).</small>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddSpecRow">
+                        <i class="bi bi-plus-lg me-1"></i> Add Specification Row
+                    </button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover align-middle mb-2" id="specsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 45%;">Specification Parameter (Key)</th>
+                                    <th style="width: 45%;">Value & Unit</th>
+                                    <th class="text-center" style="width: 10%;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="specsTableBody">
+                                <!-- Dynamic Rows Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 align-items-center mt-3 pt-2 border-top">
+                        <span class="small text-muted fw-semibold">Quick Suggestions:</span>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Operating Weight" data-placeholder="e.g. 21,500 kg">+ Operating Weight</button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Engine Power" data-placeholder="e.g. 140 HP (104 kW)">+ Engine Power</button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Bucket Capacity" data-placeholder="e.g. 1.0 m3">+ Bucket Capacity</button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Max Digging Depth" data-placeholder="e.g. 6.72 m">+ Max Digging Depth</button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Fuel Tank Capacity" data-placeholder="e.g. 410 L">+ Fuel Tank</button>
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-spec-btn" data-key="Boom Length" data-placeholder="e.g. 5.7 m">+ Boom Length</button>
+                    </div>
+
+                    <!-- Datalist for key suggestions -->
+                    <datalist id="commonSpecKeys">
+                        <option value="Operating Weight">
+                        <option value="Engine Power">
+                        <option value="Engine Model">
+                        <option value="Bucket Capacity">
+                        <option value="Max Digging Depth">
+                        <option value="Max Reach">
+                        <option value="Lifting Capacity">
+                        <option value="Fuel Tank Capacity">
+                        <option value="Hydraulic System Flow">
+                        <option value="Boom Length">
+                        <option value="Arm / Stick Length">
+                        <option value="Track Shoe Width">
+                        <option value="Operating Voltage">
+                        <option value="Rated Output Power">
+                    </datalist>
+                </div>
+            </div>
+
             <!-- Rental Rate Tariff Card Formset -->
             <div class="card shadow-sm mb-4 border-0">
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
@@ -131,7 +188,154 @@ document.addEventListener('DOMContentLoaded', function() {
     const assetCodeInput = document.getElementById('id_asset_code') || document.querySelector('input[name="asset_code"]');
     const nameInput = document.getElementById('id_equipment_name') || document.querySelector('input[name="equipment_name"]');
     const statusBadge = document.getElementById('assetCodeStatusBadge');
+    const specsJsonInput = document.getElementById('id_specifications_json') || document.querySelector('input[name="specifications"]') || document.querySelector('textarea[name="specifications"]');
+    const specsTableBody = document.getElementById('specsTableBody');
+    const btnAddSpecRow = document.getElementById('btnAddSpecRow');
+    const form = document.getElementById('equipmentForm');
 
+    // -------------------------------------------------------------------------
+    // 1. DYNAMIC TECHNICAL SPECIFICATIONS KEY-VALUE BUILDER
+    // -------------------------------------------------------------------------
+    function createSpecRow(key = '', value = '', placeholder = 'e.g. 21,500 kg') {
+        const tr = document.createElement('tr');
+        tr.className = 'spec-row';
+        tr.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm spec-key-input" list="commonSpecKeys" value="${escapeHtml(key)}" placeholder="e.g. Operating Weight">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm spec-val-input" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-spec-row" title="Remove row">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+
+        tr.querySelector('.btn-remove-spec-row').addEventListener('click', function() {
+            tr.remove();
+            serializeSpecsToJson();
+            if (specsTableBody.children.length === 0) {
+                renderEmptySpecsState();
+            }
+        });
+
+        tr.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', serializeSpecsToJson);
+        });
+
+        return tr;
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function renderEmptySpecsState() {
+        if (!specsTableBody) return;
+        specsTableBody.innerHTML = `
+            <tr id="emptySpecsRow">
+                <td colspan="3" class="text-center py-3 text-muted">
+                    <small><i class="bi bi-info-circle me-1"></i> No specifications added yet. Click <strong>Add Specification Row</strong> or use quick suggestions below.</small>
+                </td>
+            </tr>
+        `;
+    }
+
+    function serializeSpecsToJson() {
+        if (!specsTableBody || !specsJsonInput) return;
+        const specsObj = {};
+        const rows = specsTableBody.querySelectorAll('.spec-row');
+        rows.forEach(row => {
+            const key = row.querySelector('.spec-key-input')?.value.trim();
+            const val = row.querySelector('.spec-val-input')?.value.trim();
+            if (key) {
+                specsObj[key] = val;
+            }
+        });
+        specsJsonInput.value = JSON.stringify(specsObj);
+    }
+
+    function addSpecRow(key = '', value = '', placeholder = '') {
+        const emptyRow = document.getElementById('emptySpecsRow');
+        if (emptyRow) emptyRow.remove();
+
+        const tr = createSpecRow(key, value, placeholder);
+        specsTableBody.appendChild(tr);
+        serializeSpecsToJson();
+        return tr;
+    }
+
+    // Load initial specifications from JSON
+    let initialSpecs = {};
+    if (specsJsonInput && specsJsonInput.value) {
+        try {
+            initialSpecs = JSON.parse(specsJsonInput.value);
+        } catch (e) {
+            initialSpecs = {};
+        }
+    }
+
+    const initialKeys = Object.keys(initialSpecs);
+    if (initialKeys.length > 0) {
+        initialKeys.forEach(k => {
+            addSpecRow(k, initialSpecs[k]);
+        });
+    } else {
+        // Default rows for new registrations
+        if (!isEdit) {
+            addSpecRow('Operating Weight', '', 'e.g. 21,500 kg');
+            addSpecRow('Engine Power', '', 'e.g. 140 HP (104 kW)');
+            addSpecRow('Bucket Capacity', '', 'e.g. 1.0 m3');
+        } else {
+            renderEmptySpecsState();
+        }
+    }
+
+    if (btnAddSpecRow) {
+        btnAddSpecRow.addEventListener('click', function() {
+            const tr = addSpecRow();
+            tr.querySelector('.spec-key-input')?.focus();
+        });
+    }
+
+    document.querySelectorAll('.quick-spec-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const key = this.dataset.key;
+            const placeholder = this.dataset.placeholder;
+            
+            // Check if key already exists in table
+            let exists = false;
+            specsTableBody.querySelectorAll('.spec-key-input').forEach(inp => {
+                if (inp.value.trim().toLowerCase() === key.toLowerCase()) {
+                    exists = true;
+                    inp.closest('tr').querySelector('.spec-val-input')?.focus();
+                }
+            });
+
+            if (!exists) {
+                const tr = addSpecRow(key, '', placeholder);
+                tr.querySelector('.spec-val-input')?.focus();
+            }
+        });
+    });
+
+    if (form) {
+        form.addEventListener('submit', function() {
+            serializeSpecsToJson();
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. REAL-TIME ASSET CODE AUTO-GENERATION
+    // -------------------------------------------------------------------------
     let debounceTimer = null;
     let isNameManuallyEdited = isEdit || (nameInput && nameInput.value.trim() !== '');
 

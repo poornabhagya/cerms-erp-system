@@ -125,12 +125,13 @@ class EquipmentForm(forms.ModelForm):
                 'id': 'id_model_input',
             }),
             'purchase_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'specifications': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"Operating Weight": "22 Ton", "Engine Power": "150 HP"}'}),
+            'specifications': forms.HiddenInput(attrs={'id': 'id_specifications_json'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['asset_code'].required = False  # Auto-generated if not provided
+        self.fields['specifications'].required = False
         self.helper = FormHelper()
         self.helper.form_tag = False  # Allows enclosing in an overarching form for inline formsets
         self.helper.layout = Layout(
@@ -159,12 +160,11 @@ class EquipmentForm(forms.ModelForm):
                 Row(
                     Column('primary_image', css_class='col-12 mb-3'),
                 ),
-                Row(
-                    Column('specifications', css_class='col-12 mb-3'),
-                ),
+                Field('specifications'),
                 css_class='bg-white p-4 rounded-3 border mb-4'
             )
         )
+
 
     def clean_asset_code(self):
         asset_code = self.cleaned_data.get('asset_code', '').upper().strip()
@@ -185,6 +185,21 @@ class EquipmentForm(forms.ModelForm):
             raise forms.ValidationError(_(f"An equipment asset with code '{asset_code}' already exists."))
 
         return asset_code
+
+    def clean_specifications(self):
+        import json
+        specs = self.cleaned_data.get('specifications')
+        if not specs:
+            return {}
+        if isinstance(specs, str):
+            try:
+                specs = json.loads(specs)
+            except (json.JSONDecodeError, TypeError):
+                specs = {}
+        if isinstance(specs, dict):
+            return {str(k).strip(): str(v).strip() for k, v in specs.items() if str(k).strip()}
+        return {}
+
 
 
 

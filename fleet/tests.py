@@ -208,4 +208,118 @@ class EquipmentAssetCodeGenerationTests(TestCase):
         self.assertEqual(data['asset_code'], "EQ-EXC-KOM-PC200-001")
 
 
+class EquipmentDeleteAndSpecsTests(TestCase):
+    def setUp(self):
+        from users.models import User
+        self.admin_user = User.objects.create_superuser(
+            username='admin_delete_tester',
+            email='admin_del@test.com',
+            password='AdminPass123!',
+            role=User.Role.ADMINISTRATOR
+        )
+        self.workshop_user = User.objects.create_user(
+            username='workshop_delete_tester',
+            email='workshop_del@test.com',
+            password='StaffPass123!',
+            role=User.Role.WORKSHOP_MANAGER
+        )
+        self.field_user = User.objects.create_user(
+            username='field_delete_tester',
+            email='field_del@test.com',
+            password='StaffPass123!',
+            role=User.Role.FIELD_OFFICER
+        )
+        self.category = Category.objects.create(
+            name='Bulldozers',
+            code='BLD',
+            description='Track dozers'
+        )
+        self.equipment = Equipment.objects.create(
+            asset_code='EQ-BLD-CAT-D6T-001',
+            equipment_name='CAT D6T Track-Type Tractor',
+            category=self.category,
+            brand='Caterpillar',
+            model_number='D6T',
+            serial_number='CAT-D6T-999',
+            manufacture_year=2021,
+            purchase_cost=Decimal('42000000.00'),
+            purchase_date=timezone.now().date(),
+            current_hour_meter=Decimal('850.00'),
+            specifications={"Operating Weight": "21500 kg", "Blade Capacity": "4.5 m3"},
+            status=Equipment.Status.AVAILABLE
+        )
+
+    def test_admin_can_delete_unlinked_equipment(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.post(f'/fleet/{self.equipment.asset_code}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, '/fleet/')
+        self.assertFalse(Equipment.objects.filter(asset_code='EQ-BLD-CAT-D6T-001').exists())
+
+    def test_non_admin_cannot_delete_equipment(self):
+        # Workshop manager should be denied (403)
+        self.client.force_login(self.workshop_user)
+        response = self.client.post(f'/fleet/{self.equipment.asset_code}/delete/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Equipment.objects.filter(asset_code='EQ-BLD-CAT-D6T-001').exists())
+
+        # Field officer should be denied (403)
+        self.client.force_login(self.field_user)
+        response2 = self.client.post(f'/fleet/{self.equipment.asset_code}/delete/')
+        self.assertEqual(response2.status_code, 403)
+        self.assertTrue(Equipment.objects.filter(asset_code='EQ-BLD-CAT-D6T-001').exists())
+
+    def test_delete_blocked_when_linked_to_quotation(self):
+        from customers.models import Customer
+        from rentals.models import Quotation, QuotationItem
+        customer = Customer.objects.create(
+            company_name='Mega Infra Ltd',
+            primary_contact_name='John Builder',
+            phone_number='0771234567',
+            email='megainfra@test.com',
+            tax_number='T12345678'
+        )
+        quotation = Quotation.objects.create(
+            quotation_number='QT-2026-0001',
+            customer=customer,
+            valid_until=timezone.now().date(),
+            status=Quotation.Status.DRAFT,
+            created_by=self.admin_user
+        )
+        QuotationItem.objects.create(
+            quotation=quotation,
+            equipment=self.equipment,
+            rate_applied=Decimal('50000.00'),
+            estimated_duration_days=10
+        )
+
+        self.client.force_login(self.admin_user)
+        response = self.client.post(f'/fleet/{self.equipment.asset_code}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, f'/fleet/{self.equipment.asset_code}/')
+        # Equipment must still exist in DB
+        self.assertTrue(Equipment.objects.filter(asset_code=self.equipment.asset_code).exists())
+
+    def test_equipment_form_specifications_cleaner(self):
+        from fleet.forms import EquipmentForm
+        form_data = {
+            'asset_code': 'EQ-BLD-KOM-D85-001',
+            'equipment_name': 'Komatsu D85 Dozer',
+            'category': self.category.id,
+            'brand': 'Komatsu',
+            'model_number': 'D85',
+            'serial_number': 'KOM-D85-111',
+            'manufacture_year': 2022,
+            'purchase_cost': '38000000.00',
+            'purchase_date': timezone.now().date(),
+            'current_hour_meter': '500.00',
+            'specifications': '{"Engine Power": "260 HP", "Blade Capacity": "5.2 m3", "": "Ignored"}',
+            'status': 'AVAILABLE'
+        }
+        form = EquipmentForm(data=form_data)
+        self.assertTrue(form.is_valid(), form.errors)
+        cleaned_specs = form.cleaned_data['specifications']
+        self.assertEqual(cleaned_specs, {"Engine Power": "260 HP", "Blade Capacity": "5.2 m3"})
+
+
 
