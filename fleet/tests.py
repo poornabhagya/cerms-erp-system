@@ -49,3 +49,76 @@ class FleetModelTests(TestCase):
     def test_invalid_status_transition_raises_error(self):
         with self.assertRaises(ValueError):
             self.equipment.transition_status("INVALID_STATUS")
+
+
+class CategoryViewTests(TestCase):
+    def setUp(self):
+        from users.models import User
+        self.admin_user = User.objects.create_superuser(
+            username='admin_test',
+            email='admin@test.com',
+            password='AdminPass123!',
+            role=User.Role.ADMINISTRATOR
+        )
+        self.workshop_user = User.objects.create_user(
+            username='workshop_test',
+            email='workshop@test.com',
+            password='StaffPass123!',
+            role=User.Role.WORKSHOP_MANAGER
+        )
+        self.field_officer = User.objects.create_user(
+            username='field_test',
+            email='field@test.com',
+            password='StaffPass123!',
+            role=User.Role.FIELD_OFFICER
+        )
+        self.category = Category.objects.create(
+            name='Cranes',
+            code='CRN',
+            description='Mobile & Crawler Cranes'
+        )
+
+    def test_category_list_view_authenticated(self):
+        self.client.force_login(self.workshop_user)
+        response = self.client.get('/fleet/categories/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'fleet/category_list.html')
+        self.assertContains(response, 'Cranes')
+        self.assertContains(response, 'CRN')
+
+    def test_category_create_view_by_workshop_manager(self):
+        self.client.force_login(self.workshop_user)
+        # GET form
+        response = self.client.get('/fleet/categories/create/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'fleet/category_form.html')
+
+        # POST valid category
+        post_data = {
+            'name': 'Generators & Power',
+            'code': 'gen',
+            'description': 'Industrial diesel generators'
+        }
+        post_response = self.client.post('/fleet/categories/create/', data=post_data)
+        self.assertEqual(post_response.status_code, 302)
+        self.assertRedirects(post_response, '/fleet/categories/')
+        self.assertTrue(Category.objects.filter(code='GEN').exists())
+
+    def test_category_update_view(self):
+        self.client.force_login(self.admin_user)
+        update_data = {
+            'name': 'Heavy Mobile Cranes',
+            'code': 'CRN',
+            'description': 'Updated crawler and mobile cranes'
+        }
+        response = self.client.post(f'/fleet/categories/{self.category.code}/edit/', data=update_data)
+        self.assertEqual(response.status_code, 302)
+        self.category.refresh_from_db()
+        self.assertEqual(self.category.name, 'Heavy Mobile Cranes')
+
+    def test_category_create_restricted_for_unauthorized_role(self):
+        self.client.force_login(self.field_officer)
+        response = self.client.get('/fleet/categories/create/')
+        # Field officer should be denied with 403 Forbidden
+        self.assertEqual(response.status_code, 403)
+

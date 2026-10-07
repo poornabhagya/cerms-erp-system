@@ -99,10 +99,35 @@
                             <i class="bi bi-speedometer2 me-1"></i> Dashboard
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'fleet:equipment_list' %}">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="fleetDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-truck me-1"></i> Fleet Master
                         </a>
+                        <ul class="dropdown-menu shadow-sm" aria-labelledby="fleetDropdown">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'fleet:equipment_list' %}">
+                                    <i class="bi bi-truck me-2 text-primary"></i> Equipment Fleet
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'fleet:category_list' %}">
+                                    <i class="bi bi-tags me-2 text-info"></i> Equipment Categories
+                                </a>
+                            </li>
+                            {% if user.role == 'ADMINISTRATOR' or user.role == 'WORKSHOP_MANAGER' or user.role == 'MANAGEMENT' or user.is_superuser %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'fleet:equipment_create' %}">
+                                    <i class="bi bi-plus-circle me-2 text-success"></i> Register Equipment
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'fleet:category_create' %}">
+                                    <i class="bi bi-plus-square me-2 text-warning"></i> New Category
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="rentalsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">

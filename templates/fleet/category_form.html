@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if is_edit %}Edit Category: {{ form.instance.name }}{% else %}Register Equipment Category{% endif %} — Fleet Master{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-xl-7">
+        <!-- Page Header & Breadcrumbs -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-1">
+                        <li class="breadcrumb-item"><a href="{% url 'fleet:equipment_list' %}">Fleet Master</a></li>
+                        <li class="breadcrumb-item"><a href="{% url 'fleet:category_list' %}">Equipment Categories</a></li>
+                        <li class="breadcrumb-item active">{% if is_edit %}Edit Category{% else %}New Category{% endif %}</li>
+                    </ol>
+                </nav>
+                <h3 class="fw-bold mb-0">{% if is_edit %}Update Category: {{ form.instance.name }}{% else %}Register New Equipment Category{% endif %}</h3>
+            </div>
+            <a href="{% url 'fleet:category_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-lg me-1"></i> Cancel
+            </a>
+        </div>
+
+        <!-- Category Form Card -->
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-tags text-primary me-2"></i> Category Classification Details</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" novalidate>
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger py-2 small mb-3">
+                        {{ form.non_field_errors }}
+                    </div>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <div class="col-12 col-md-8">
+                            <label class="form-label small fw-bold text-uppercase text-muted" for="{{ form.name.id_for_label }}">Category Name *</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                            <div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Official classification title (e.g., Hydraulic Excavators, Mobile Cranes).</small>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                            <label class="form-label small fw-bold text-uppercase text-muted" for="{{ form.code.id_for_label }}">Category Code *</label>
+                            {{ form.code }}
+                            {% if form.code.errors %}
+                            <div class="text-danger small mt-1">{{ form.code.errors.0 }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Short unique mnemonic slug (e.g., EXC, CRN, GEN).</small>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-bold text-uppercase text-muted" for="{{ form.description.id_for_label }}">Description</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Detailed operational scope and machinery models included under this category.</small>
+                        </div>
+                    </div>
+
+                    <hr class="my-4 text-muted">
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="{% url 'fleet:category_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i> Back to Categories
+                        </a>
+                        <button type="submit" class="btn btn-primary px-4 shadow-sm">
+                            <i class="bi bi-check-circle me-1"></i> {% if is_edit %}Save Changes{% else %}Save Category{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

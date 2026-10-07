@@ -7,6 +7,37 @@ from crispy_forms.layout import Layout, Row, Column, Submit, HTML, Div, Field
 from .models import Equipment, RentalRate, Category
 
 
+class CategoryForm(forms.ModelForm):
+    """Form for creating and editing Equipment Category records with Crispy Bootstrap 5."""
+
+    class Meta:
+        model = Category
+        fields = ['name', 'code', 'description']
+        widgets = {
+            'name': forms.TextInput(attrs={'placeholder': 'e.g. Hydraulic Excavators', 'class': 'form-control'}),
+            'code': forms.TextInput(attrs={'placeholder': 'e.g. EXC', 'class': 'form-control', 'style': 'text-transform: uppercase;'}),
+            'description': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Detailed notes on equipment types included in this category...', 'class': 'form-control'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper = FormHelper()
+        self.helper.form_tag = False
+        self.helper.layout = Layout(
+            Row(
+                Column('name', css_class='col-12 col-md-8 mb-3'),
+                Column('code', css_class='col-12 col-md-4 mb-3'),
+            ),
+            Row(
+                Column('description', css_class='col-12 mb-3'),
+            ),
+        )
+
+    def clean_code(self):
+        code = self.cleaned_data.get('code', '')
+        return code.upper().strip()
+
+
 class EquipmentForm(forms.ModelForm):
     """Form for creating and editing Equipment Master asset records with Crispy Bootstrap 5."""
 
