@@ -48,3 +48,15 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const customerCodeInput = document.getElementById('id_customer_code');
+        if (customerCodeInput) {
+            customerCodeInput.setAttribute('readonly', 'readonly');
+            customerCodeInput.classList.add('bg-light', 'font-monospace', 'fw-semibold', 'text-primary');
+        }
+    });
+</script>
+{% endblock %}

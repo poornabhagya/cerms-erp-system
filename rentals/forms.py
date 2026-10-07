@@ -13,6 +13,16 @@ class CustomerForm(forms.ModelForm):
     """
     Form for registering and updating Customer commercial master records with Crispy Bootstrap 5 styling.
     """
+    customer_code = forms.CharField(
+        label=_("Customer Code"),
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Auto-generated (e.g. CUST-2026-001)',
+            'readonly': 'readonly',
+            'class': 'form-control bg-light font-monospace fw-semibold text-primary',
+        }),
+        help_text=_("System auto-generated identifier (CUST-YYYY-XXX).")
+    )
 
     class Meta:
         model = Customer
@@ -36,6 +46,15 @@ class CustomerForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            if not self.initial.get('customer_code'):
+                self.initial['customer_code'] = Customer.generate_customer_code()
+            self.fields['customer_code'].widget.attrs['readonly'] = True
+            self.fields['customer_code'].widget.attrs['class'] = 'form-control bg-light font-monospace fw-semibold text-primary'
+        else:
+            self.fields['customer_code'].widget.attrs['readonly'] = True
+            self.fields['customer_code'].widget.attrs['class'] = 'form-control bg-light font-monospace'
+
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -72,6 +91,12 @@ class CustomerForm(forms.ModelForm):
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
+
+    def clean_customer_code(self):
+        code = self.cleaned_data.get('customer_code')
+        if not code:
+            code = Customer.generate_customer_code(existing_pk=self.instance.pk)
+        return code
 
 
 class ProjectSiteForm(forms.ModelForm):

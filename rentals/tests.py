@@ -75,6 +75,49 @@ class CustomerModelTestCase(TestCase):
         with self.assertRaises(ValidationError):
             validate_customer_credit_limit(self.customer, Decimal("10000.00"), raise_exception=True)
 
+    def test_customer_code_auto_generation(self):
+        # 1. Test generate_customer_code format
+        code = Customer.generate_customer_code(year=2026)
+        self.assertEqual(code, "CUST-2026-002")
+
+        # 2. Test auto-creation when customer_code is omitted/empty
+        new_cust = Customer.objects.create(
+            company_name="Tudawe Brothers Ltd",
+            contact_person="Ajith Tudawe",
+            phone="+94776665544",
+            email="ajith@tudawe.lk",
+            billing_address="Colombo 08",
+            credit_limit=Decimal("1500000.00")
+        )
+        self.assertEqual(new_cust.customer_code, "CUST-2026-002")
+
+        # 3. Next code should increment to 003
+        next_code = Customer.generate_customer_code(year=2026)
+        self.assertEqual(next_code, "CUST-2026-003")
+
+    def test_customer_form_code_handling(self):
+        from rentals.forms import CustomerForm
+        # New form initializes with next customer code
+        form = CustomerForm()
+        self.assertEqual(form.initial.get('customer_code'), "CUST-2026-002")
+
+        # Submit form with empty customer_code
+        post_data = {
+            'customer_code': '',
+            'company_name': 'Sierra Construction',
+            'contact_person': 'Prasanna De Silva',
+            'phone': '+94778889900',
+            'email': 'prasanna@sierra.lk',
+            'billing_address': 'Kaduwela',
+            'credit_limit': '3000000.00',
+            'current_outstanding_balance': '0.00',
+            'status': 'ACTIVE',
+        }
+        bound_form = CustomerForm(data=post_data)
+        self.assertTrue(bound_form.is_valid(), bound_form.errors)
+        created_cust = bound_form.save()
+        self.assertEqual(created_cust.customer_code, "CUST-2026-002")
+
 
 class CustomerViewsTestCase(TestCase):
     def setUp(self):

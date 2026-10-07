@@ -92,6 +92,55 @@ class Customer(TimeStampedModel):
         """Returns True if the customer account is in good standing (Active)."""
         return self.status == self.Status.ACTIVE
 
+    @classmethod
+    def generate_customer_code(cls, year: int = None, existing_pk=None) -> str:
+        """
+        Generates standard customer code in the format:
+        CUST-[YYYY]-[Sequence_Number] (e.g., CUST-2026-001).
+        Extracts the year (defaulting to current year) and calculates the next available 3-digit sequence.
+        """
+        import re
+        from django.utils import timezone
+
+        if not year:
+            year = timezone.now().year
+
+        prefix = f"CUST-{year}-"
+
+        # Query all existing customer codes for this year prefix
+        qs = cls.objects.filter(customer_code__startswith=prefix)
+        if existing_pk:
+            qs = qs.exclude(pk=existing_pk)
+
+        existing_codes = list(qs.values_list('customer_code', flat=True))
+
+        # Extract sequence numbers
+        max_seq = 0
+        for code in existing_codes:
+            match = re.search(r'CUST-\d{4}-(\d+)', code)
+            if match:
+                try:
+                    seq_num = int(match.group(1))
+                    if seq_num > max_seq:
+                        max_seq = seq_num
+                except ValueError:
+                    continue
+
+        next_seq = max_seq + 1
+        candidate_code = f"{prefix}{next_seq:03d}"
+
+        # Safety loop to prevent PK collisions
+        while cls.objects.filter(customer_code=candidate_code).exclude(pk=existing_pk).exists():
+            next_seq += 1
+            candidate_code = f"{prefix}{next_seq:03d}"
+
+        return candidate_code
+
+    def save(self, *args, **kwargs):
+        if not self.customer_code:
+            self.customer_code = self.generate_customer_code(existing_pk=self.pk)
+        super().save(*args, **kwargs)
+
 
 class ProjectSite(TimeStampedModel):
     """
