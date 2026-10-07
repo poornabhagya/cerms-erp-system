@@ -14,6 +14,8 @@ urlpatterns = [
     path('sites/', views.ProjectSiteListView.as_view(), name='site_list'),
     path('sites/create/', views.ProjectSiteCreateView.as_view(), name='site_create'),
     path('sites/<str:project_code>/edit/', views.ProjectSiteUpdateView.as_view(), name='site_update'),
+    path('sites/<str:project_code>/delete/', views.ProjectSiteDeleteView.as_view(), name='site_delete'),
+    path('api/generate-site-code/', views.ProjectSiteCodeGenerateAPIView.as_view(), name='api_generate_site_code'),
 
     # Quotation Lifecycle Endpoints
     path('quotations/', views.QuotationListView.as_view(), name='quotation_list'),

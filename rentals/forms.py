@@ -103,6 +103,16 @@ class ProjectSiteForm(forms.ModelForm):
     """
     Form for registering and updating physical Project Sites linked to Customer organizations.
     """
+    project_code = forms.CharField(
+        label=_("Project Site Code"),
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Auto-generated (e.g. PRJ-001-01)',
+            'readonly': 'readonly',
+            'class': 'form-control bg-light font-monospace fw-semibold text-success',
+        }),
+        help_text=_("System auto-generated identifier (PRJ-[Customer_Sequence]-[Site_Sequence]).")
+    )
 
     class Meta:
         model = ProjectSite
@@ -123,6 +133,16 @@ class ProjectSiteForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            initial_customer = self.initial.get('customer')
+            if initial_customer and not self.initial.get('project_code'):
+                self.initial['project_code'] = ProjectSite.generate_project_code(customer=initial_customer)
+            self.fields['project_code'].widget.attrs['readonly'] = True
+            self.fields['project_code'].widget.attrs['class'] = 'form-control bg-light font-monospace fw-semibold text-success'
+        else:
+            self.fields['project_code'].widget.attrs['readonly'] = True
+            self.fields['project_code'].widget.attrs['class'] = 'form-control bg-light font-monospace'
+
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -151,6 +171,13 @@ class ProjectSiteForm(forms.ModelForm):
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
+
+    def clean_project_code(self):
+        code = self.cleaned_data.get('project_code')
+        customer = self.cleaned_data.get('customer')
+        if not code:
+            code = ProjectSite.generate_project_code(customer=customer, existing_pk=self.instance.pk)
+        return code
 
 
 class QuotationForm(forms.ModelForm):

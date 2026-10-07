@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum, Count
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
@@ -281,6 +282,72 @@ class ProjectSiteUpdateView(RoleRequiredMixin, UpdateView):
     def form_valid(self, form):
         self.object = form.save()
         messages.success(self.request, f"Project Site '{self.object.project_name}' updated successfully.")
+        return redirect('rentals:site_list')
+
+
+class ProjectSiteCodeGenerateAPIView(RoleRequiredMixin, View):
+    """
+    Real-time API endpoint to calculate and preview standard project site code
+    based on the selected customer.
+    """
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get(self, request, *args, **kwargs):
+        customer_code = request.GET.get('customer', '').strip()
+        customer = None
+        if customer_code:
+            customer = Customer.objects.filter(customer_code=customer_code).first()
+
+        generated_code = ProjectSite.generate_project_code(customer=customer)
+        return JsonResponse({
+            'success': True,
+            'project_code': generated_code
+        })
+
+
+class ProjectSiteDeleteView(RoleRequiredMixin, View):
+    """
+    Administrator-only view to safely delete a ProjectSite record.
+    Strictly restricted to ADMINISTRATOR role per docs/03_ROLES_AND_PERMISSIONS.md.
+    Enforces relational integrity checks against active/historical Quotations and RentalContracts.
+    """
+    allowed_roles = (User.Role.ADMINISTRATOR,)
+
+    def post(self, request, project_code):
+        site = get_object_or_404(ProjectSite, project_code=project_code)
+
+        # 1. Relational Integrity Check
+        has_quotations = site.quotations.exists()
+        has_contracts = site.contracts.exists()
+
+        if has_quotations or has_contracts:
+            messages.error(
+                request,
+                f"Cannot delete Project Site '{site.project_code}' ({site.project_name}) because it is linked to "
+                f"existing commercial quotations or rental contracts. To archive it, update its operational status to 'COMPLETED' or 'INACTIVE' instead."
+            )
+            next_url = request.POST.get('next') or request.META.get('HTTP_REFERER')
+            if next_url:
+                return redirect(next_url)
+            return redirect('rentals:site_list')
+
+        # 2. Safe deletion
+        site_code = site.project_code
+        site_name = site.project_name
+        site.delete()
+
+        messages.success(
+            request,
+            f"Project Site '{site_code}' ({site_name}) was successfully deleted."
+        )
+        next_url = request.POST.get('next')
+        if next_url:
+            return redirect(next_url)
         return redirect('rentals:site_list')
 
 

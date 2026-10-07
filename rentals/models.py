@@ -151,12 +151,13 @@ class ProjectSite(TimeStampedModel):
     class Status(models.TextChoices):
         ACTIVE = 'ACTIVE', _('Active')
         COMPLETED = 'COMPLETED', _('Completed')
+        INACTIVE = 'INACTIVE', _('Inactive')
 
     project_code = models.CharField(
         _("Project Site Code"),
         max_length=50,
         primary_key=True,
-        help_text=_("Unique project identifier (e.g., PRJ-COL-001).")
+        help_text=_("Unique project identifier (e.g., PRJ-001-01).")
     )
     customer = models.ForeignKey(
         Customer,
@@ -208,6 +209,72 @@ class ProjectSite(TimeStampedModel):
 
     def __str__(self):
         return f"{self.project_code} - {self.project_name} ({self.customer.company_name})"
+
+    @classmethod
+    def generate_project_code(cls, customer=None, existing_pk=None) -> str:
+        """
+        Generates standard project site code in the format:
+        PRJ-[Customer_Sequence]-[Site_Sequence] (e.g., PRJ-001-01, PRJ-003-01).
+        """
+        import re
+
+        cust_seq = 'GEN'
+        if customer:
+            if hasattr(customer, 'customer_code'):
+                cust_code = customer.customer_code
+            else:
+                cust_code = str(customer)
+
+            match = re.search(r'CUST-\d{4}-(\d+)', cust_code)
+            if match:
+                try:
+                    cust_seq = f"{int(match.group(1)):03d}"
+                except ValueError:
+                    cust_seq = 'GEN'
+            else:
+                digits_match = re.search(r'(\d+)', cust_code)
+                if digits_match:
+                    try:
+                        cust_seq = f"{int(digits_match.group(1)):03d}"
+                    except ValueError:
+                        cust_seq = 'GEN'
+                else:
+                    cust_seq = 'GEN'
+
+        prefix = f"PRJ-{cust_seq}-"
+
+        # Query existing project codes matching this customer prefix
+        qs = cls.objects.filter(project_code__startswith=prefix)
+        if existing_pk:
+            qs = qs.exclude(pk=existing_pk)
+
+        existing_codes = list(qs.values_list('project_code', flat=True))
+
+        max_seq = 0
+        for code in existing_codes:
+            m = re.search(rf'PRJ-{re.escape(cust_seq)}-(\d+)', code)
+            if m:
+                try:
+                    seq_num = int(m.group(1))
+                    if seq_num > max_seq:
+                        max_seq = seq_num
+                except ValueError:
+                    continue
+
+        next_seq = max_seq + 1
+        candidate_code = f"{prefix}{next_seq:02d}"
+
+        # Safety loop to prevent PK collisions
+        while cls.objects.filter(project_code=candidate_code).exclude(pk=existing_pk).exists():
+            next_seq += 1
+            candidate_code = f"{prefix}{next_seq:02d}"
+
+        return candidate_code
+
+    def save(self, *args, **kwargs):
+        if not self.project_code:
+            self.project_code = self.generate_project_code(customer=self.customer, existing_pk=self.pk)
+        super().save(*args, **kwargs)
 
 
 class Quotation(TimeStampedModel):

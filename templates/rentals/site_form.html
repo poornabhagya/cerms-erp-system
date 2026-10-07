@@ -48,3 +48,42 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const customerSelect = document.getElementById('id_customer');
+        const projectCodeInput = document.getElementById('id_project_code');
+        const isEdit = {% if is_edit %}true{% else %}false{% endif %};
+
+        if (projectCodeInput) {
+            projectCodeInput.setAttribute('readonly', 'readonly');
+            projectCodeInput.classList.add('bg-light', 'font-monospace', 'fw-semibold', 'text-success');
+        }
+
+        if (customerSelect && projectCodeInput && !isEdit) {
+            function updateSiteCode() {
+                const customerVal = customerSelect.value;
+                if (!customerVal) {
+                    projectCodeInput.value = '';
+                    projectCodeInput.placeholder = 'Select customer to auto-generate code';
+                    return;
+                }
+                fetch(`{% url 'rentals:api_generate_site_code' %}?customer=${encodeURIComponent(customerVal)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data && data.project_code) {
+                            projectCodeInput.value = data.project_code;
+                        }
+                    })
+                    .catch(err => console.error('Error auto-generating site code:', err));
+            }
+
+            customerSelect.addEventListener('change', updateSiteCode);
+            if (customerSelect.value && !projectCodeInput.value) {
+                updateSiteCode();
+            }
+        }
+    });
+</script>
+{% endblock %}

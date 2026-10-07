@@ -531,3 +531,184 @@ class AvailabilityCalendarAndConflictTests(TestCase):
         self.assertIn('create_quote_url', data['equipment'][0])
 
 
+class ProjectSiteAutoCodeAndDeletionTestCase(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="admin_tester",
+            email="admin_site@cerms.com",
+            password="AdminPassword123!",
+            role=User.Role.ADMINISTRATOR
+        )
+        self.rental_officer = User.objects.create_user(
+            username="rental_tester",
+            email="rental_site@cerms.com",
+            password="StaffPassword123!",
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.ops_officer = User.objects.create_user(
+            username="ops_tester",
+            email="ops_site@cerms.com",
+            password="StaffPassword123!",
+            role=User.Role.OPERATIONS_OFFICER
+        )
+
+        self.customer = Customer.objects.create(
+            customer_code="CUST-2026-001",
+            company_name="Access Engineering PLC",
+            contact_person="Sunil Perera",
+            phone="+94771234567",
+            email="sunil@accesseng.lk",
+            billing_address="Colombo 03",
+            credit_limit=Decimal("2000000.00"),
+            status=Customer.Status.ACTIVE
+        )
+        self.customer2 = Customer.objects.create(
+            customer_code="CUST-2026-009",
+            company_name="Maga Engineering",
+            contact_person="Rohan Fernando",
+            phone="+94772223344",
+            email="rohan@maga.lk",
+            billing_address="Colombo 05",
+            credit_limit=Decimal("1500000.00"),
+            status=Customer.Status.ACTIVE
+        )
+
+    def test_project_code_generation_algorithm(self):
+        # 1. First site for customer 001
+        code_1 = ProjectSite.generate_project_code(customer=self.customer)
+        self.assertEqual(code_1, "PRJ-001-01")
+
+        site_1 = ProjectSite.objects.create(
+            customer=self.customer,
+            project_name="Interchange Section A",
+            site_address="Mirigama Site",
+            status=ProjectSite.Status.ACTIVE
+        )
+        self.assertEqual(site_1.project_code, "PRJ-001-01")
+
+        # 2. Second site for customer 001 should increment to 02
+        code_2 = ProjectSite.generate_project_code(customer=self.customer)
+        self.assertEqual(code_2, "PRJ-001-02")
+
+        # 3. First site for customer 009
+        code_cust2 = ProjectSite.generate_project_code(customer=self.customer2)
+        self.assertEqual(code_cust2, "PRJ-009-01")
+
+    def test_project_site_status_management(self):
+        site = ProjectSite.objects.create(
+            customer=self.customer,
+            project_name="Marine Drive Ext",
+            site_address="Colombo 03",
+            status=ProjectSite.Status.ACTIVE
+        )
+        self.assertEqual(site.status, ProjectSite.Status.ACTIVE)
+
+        # Transition to COMPLETED
+        site.status = ProjectSite.Status.COMPLETED
+        site.save()
+        self.assertEqual(site.status, ProjectSite.Status.COMPLETED)
+
+        # Transition to INACTIVE
+        site.status = ProjectSite.Status.INACTIVE
+        site.save()
+        self.assertEqual(site.status, ProjectSite.Status.INACTIVE)
+
+    def test_project_site_form_and_api(self):
+        from rentals.forms import ProjectSiteForm
+
+        # API endpoint for code generation
+        self.client.force_login(self.rental_officer)
+        response = self.client.get(f'/rentals/api/generate-site-code/?customer={self.customer.customer_code}')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['project_code'], "PRJ-001-01")
+
+        # Form saves with auto-generated code
+        form_data = {
+            'project_code': '',
+            'customer': self.customer.customer_code,
+            'project_name': 'Kandy Tunnel Project',
+            'site_address': 'Kandy Interchange',
+            'gps_coordinates': '7.2906,80.6337',
+            'site_contact_person': 'Nuwan Perera',
+            'site_contact_phone': '+94771112233',
+            'status': 'ACTIVE',
+        }
+        form = ProjectSiteForm(data=form_data)
+        self.assertTrue(form.is_valid(), form.errors)
+        saved_site = form.save()
+        self.assertEqual(saved_site.project_code, "PRJ-001-01")
+
+    def test_admin_can_delete_unlinked_project_site(self):
+        site = ProjectSite.objects.create(
+            customer=self.customer,
+            project_name="Temporary Work Depot",
+            site_address="Kelaniya",
+            status=ProjectSite.Status.INACTIVE
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(f'/rentals/sites/{site.project_code}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ProjectSite.objects.filter(project_code=site.project_code).exists())
+
+    def test_non_admin_cannot_delete_project_site(self):
+        site = ProjectSite.objects.create(
+            customer=self.customer,
+            project_name="Restricted Site Depot",
+            site_address="Ja-Ela",
+            status=ProjectSite.Status.ACTIVE
+        )
+        # Rental officer should be 403 Forbidden
+        self.client.force_login(self.rental_officer)
+        response = self.client.post(f'/rentals/sites/{site.project_code}/delete/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(ProjectSite.objects.filter(project_code=site.project_code).exists())
+
+        # Operations officer should be 403 Forbidden
+        self.client.force_login(self.ops_officer)
+        response2 = self.client.post(f'/rentals/sites/{site.project_code}/delete/')
+        self.assertEqual(response2.status_code, 403)
+        self.assertTrue(ProjectSite.objects.filter(project_code=site.project_code).exists())
+
+    def test_delete_blocked_when_linked_to_quotation(self):
+        category = Category.objects.create(name='Heavy Haulage', code='HAUL')
+        equipment = Equipment.objects.create(
+            asset_code='EQ-HAUL-VOL-FH16-001',
+            equipment_name='Volvo FH16 Prime Mover',
+            category=category,
+            brand='Volvo',
+            model_number='FH16',
+            serial_number='VOL-FH16-101',
+            manufacture_year=2023,
+            purchase_cost=Decimal('45000000.00'),
+            purchase_date=date.today(),
+            current_hour_meter=Decimal('120.00'),
+            status=Equipment.Status.AVAILABLE
+        )
+        site = ProjectSite.objects.create(
+            customer=self.customer,
+            project_name="Central Highway Project",
+            site_address="Kurunegala",
+            status=ProjectSite.Status.ACTIVE
+        )
+        Quotation.objects.create(
+            quotation_no="QT-2026-5555",
+            customer=self.customer,
+            project_site=site,
+            equipment=equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            rate_applied=Decimal("60000.00"),
+            subtotal_amount=Decimal("900000.00"),
+            grand_total_amount=Decimal("1062000.00"),
+            status=Quotation.Status.DRAFT
+        )
+
+        self.client.force_login(self.admin)
+        response = self.client.post(f'/rentals/sites/{site.project_code}/delete/')
+        self.assertEqual(response.status_code, 302)
+        # Site must still exist due to protection check
+        self.assertTrue(ProjectSite.objects.filter(project_code=site.project_code).exists())
+
+
