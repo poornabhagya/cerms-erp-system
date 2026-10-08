@@ -52,10 +52,75 @@
     </div>
 </div>
 
-<form method="post">
+<form method="post" id="dispatchForm">
     {% csrf_token %}
 
     {% crispy form %}
+
+    <!-- Physical Inspection & Dispatch Checklist Dynamic Row Builder -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard2-check text-primary me-2"></i> Physical Inspection & Dispatch Checklist</h5>
+                <small class="text-muted">Certify pre-delivery mechanical condition and safety components before departure.</small>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddChecklistRow">
+                <i class="bi bi-plus-lg me-1"></i> Add Inspection Item
+            </button>
+        </div>
+        <div class="card-body p-4">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover align-middle mb-2" id="checklistTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 45%;">Inspection Parameter / Component</th>
+                            <th style="width: 45%;">Condition / Operational Status</th>
+                            <th class="text-center" style="width: 10%;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="checklistTableBody">
+                        <!-- Dynamic Rows Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-3 pt-2 border-top">
+                <span class="small text-muted fw-semibold">Quick Suggestions:</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Cabin & Windshield" data-val="Clean & Intact">+ Cabin & Windshield</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Hydraulic Lines & Hoses" data-val="No leaks, pressure verified">+ Hydraulic Lines & Hoses</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Undercarriage / Tracks" data-val="Tension verified, no damage">+ Undercarriage / Tracks</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Safety Beacon & Alarm" data-val="Operational">+ Safety Beacon & Alarm</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Engine & Fluid Levels" data-val="Oil & coolant levels checked">+ Engine & Fluid Levels</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Transport Tie-Downs" data-val="Secured for trailer transit">+ Transport Tie-Downs</button>
+            </div>
+
+            <!-- Datalist for key suggestions -->
+            <datalist id="commonChecklistKeys">
+                <option value="Cabin & Windshield">
+                <option value="Hydraulic Lines & Hoses">
+                <option value="Undercarriage / Tracks">
+                <option value="Tires & Pressure">
+                <option value="Engine & Fluid Levels">
+                <option value="Safety Beacon & Alarm">
+                <option value="Battery & Electricals">
+                <option value="Transport Tie-Downs">
+                <option value="Braking System">
+                <option value="Fire Extinguisher & First Aid">
+                <option value="Operator Manual in Cabin">
+            </datalist>
+
+            <!-- Datalist for common condition values -->
+            <datalist id="commonConditionValues">
+                <option value="Pass / Clean & Intact">
+                <option value="Pass / No leaks, pressure verified">
+                <option value="Pass / Tension verified">
+                <option value="Operational">
+                <option value="Checked & Verified">
+                <option value="Secured">
+                <option value="Good Condition">
+            </datalist>
+        </div>
+    </div>
 
     <div class="card border-0 shadow-sm bg-light p-3 mb-4">
         <div class="d-flex justify-content-between align-items-center">
@@ -72,4 +137,151 @@
     </div>
 </form>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checklistJsonInput = document.getElementById('id_dispatch_checklist_json') || document.querySelector('input[name="dispatch_checklist"]');
+    const checklistTableBody = document.getElementById('checklistTableBody');
+    const btnAddChecklistRow = document.getElementById('btnAddChecklistRow');
+    const form = document.getElementById('dispatchForm') || document.querySelector('form');
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function createChecklistRow(key = '', value = '', placeholder = 'e.g. Pass / Checked / Operational') {
+        const tr = document.createElement('tr');
+        tr.className = 'checklist-row';
+        tr.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm checklist-key-input" list="commonChecklistKeys" value="${escapeHtml(key)}" placeholder="e.g. Hydraulic Lines & Hoses">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm checklist-val-input" list="commonConditionValues" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-checklist-row" title="Remove item">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+
+        tr.querySelector('.btn-remove-checklist-row').addEventListener('click', function() {
+            tr.remove();
+            serializeChecklistToJson();
+            if (checklistTableBody.children.length === 0) {
+                renderEmptyChecklistState();
+            }
+        });
+
+        tr.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', serializeChecklistToJson);
+        });
+
+        return tr;
+    }
+
+    function renderEmptyChecklistState() {
+        if (!checklistTableBody) return;
+        checklistTableBody.innerHTML = `
+            <tr id="emptyChecklistRow">
+                <td colspan="3" class="text-center py-3 text-muted">
+                    <small><i class="bi bi-info-circle me-1"></i> No inspection items added. Click <strong>Add Inspection Item</strong> or use quick suggestions below.</small>
+                </td>
+            </tr>
+        `;
+    }
+
+    function serializeChecklistToJson() {
+        if (!checklistTableBody || !checklistJsonInput) return;
+        const checklistObj = {};
+        const rows = checklistTableBody.querySelectorAll('.checklist-row');
+        rows.forEach(row => {
+            const key = row.querySelector('.checklist-key-input')?.value.trim();
+            const val = row.querySelector('.checklist-val-input')?.value.trim();
+            if (key) {
+                checklistObj[key] = val || 'Pass';
+            }
+        });
+        checklistJsonInput.value = JSON.stringify(checklistObj);
+    }
+
+    function addChecklistRow(key = '', value = '', placeholder = '') {
+        const emptyRow = document.getElementById('emptyChecklistRow');
+        if (emptyRow) emptyRow.remove();
+
+        const tr = createChecklistRow(key, value, placeholder);
+        checklistTableBody.appendChild(tr);
+        serializeChecklistToJson();
+        return tr;
+    }
+
+    // Load initial checklist from JSON or populate default standard items
+    let initialChecklist = {};
+    if (checklistJsonInput && checklistJsonInput.value) {
+        try {
+            initialChecklist = JSON.parse(checklistJsonInput.value);
+        } catch (e) {
+            initialChecklist = {};
+        }
+    }
+
+    const initialKeys = Object.keys(initialChecklist);
+    if (initialKeys.length > 0) {
+        initialKeys.forEach(k => {
+            addChecklistRow(k, initialChecklist[k]);
+        });
+    } else {
+        // Standard pre-populated heavy machinery items
+        addChecklistRow('Cabin & Windshield', 'Clean & Intact');
+        addChecklistRow('Hydraulic Lines & Hoses', 'No leaks, pressure verified');
+        addChecklistRow('Undercarriage / Tracks', 'Tension verified, no damage');
+        addChecklistRow('Safety Beacon & Alarm', 'Operational');
+        addChecklistRow('Engine & Fluid Levels', 'Oil & coolant levels verified');
+        addChecklistRow('Transport Tie-Downs', 'Secured for trailer transit');
+    }
+
+    if (btnAddChecklistRow) {
+        btnAddChecklistRow.addEventListener('click', function() {
+            const tr = addChecklistRow();
+            tr.querySelector('.checklist-key-input')?.focus();
+        });
+    }
+
+    document.querySelectorAll('.quick-checklist-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const key = this.dataset.key;
+            const val = this.dataset.val || 'Pass';
+            
+            // Check if key already exists
+            let exists = false;
+            checklistTableBody.querySelectorAll('.checklist-key-input').forEach(inp => {
+                if (inp.value.trim().toLowerCase() === key.toLowerCase()) {
+                    exists = true;
+                    inp.closest('tr').querySelector('.checklist-val-input')?.focus();
+                }
+            });
+
+            if (!exists) {
+                const tr = addChecklistRow(key, val);
+                tr.querySelector('.checklist-val-input')?.focus();
+            }
+        });
+    });
+
+    if (form) {
+        form.addEventListener('submit', function() {
+            serializeChecklistToJson();
+        });
+    }
+});
+</script>
 {% endblock %}

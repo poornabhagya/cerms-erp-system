@@ -509,14 +509,16 @@ class DispatchForm(forms.ModelForm):
             'dispatch_checklist',
         ]
         widgets = {
+            'transaction_id': forms.TextInput(attrs={'class': 'form-control font-monospace', 'readonly': 'readonly'}),
             'dispatch_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
-            'dispatch_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0'}),
-            'dispatch_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'placeholder': 'Percentage 0-100%'}),
-            'dispatch_checklist': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"tires": "pass", "hydraulics": "pass", "engine": "pass", "cabin": "clean"}'}),
+            'dispatch_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control'}),
+            'dispatch_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'placeholder': 'Percentage 0-100%', 'class': 'form-control'}),
+            'dispatch_checklist': forms.HiddenInput(attrs={'id': 'id_dispatch_checklist_json'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['dispatch_checklist'].required = False
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -532,9 +534,7 @@ class DispatchForm(forms.ModelForm):
                     Column('dispatch_hour_meter', css_class='col-12 col-md-4 mb-3'),
                     Column('dispatch_fuel_level', css_class='col-12 col-md-4 mb-3'),
                 ),
-                Row(
-                    Column('dispatch_checklist', css_class='col-12 mb-3'),
-                ),
+                Field('dispatch_checklist'),
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
