@@ -80,10 +80,12 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
     Evaluates customer creditworthiness, operational standing, and outstanding balance against
     their approved credit ceiling.
     """
-    amount = Decimal(str(new_quotation_amount))
-    current_balance = Decimal(str(customer.current_outstanding_balance))
-    credit_limit = Decimal(str(customer.credit_limit))
+    amount = Decimal(str(new_quotation_amount or 0))
+    current_balance = Decimal(str(customer.current_outstanding_balance or 0))
+    credit_limit = Decimal(str(customer.credit_limit or 0))
     projected_exposure = current_balance + amount
+    available_credit = max(Decimal('0.00'), credit_limit - current_balance) if credit_limit > Decimal('0.00') else Decimal('0.00')
+    remaining_margin = max(Decimal('0.00'), credit_limit - projected_exposure) if credit_limit > Decimal('0.00') else Decimal('0.00')
 
     # 1. Customer Account Standing Check
     if not customer.is_eligible_for_rentals:
@@ -95,6 +97,7 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
             raise ValidationError(error_msg)
         return {
             'is_approved': False,
+            'allowed': False,
             'requires_management_override': True,
             'customer_code': customer.customer_code,
             'customer_status': customer.status,
@@ -102,6 +105,9 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
             'current_outstanding_balance': current_balance,
             'new_quotation_amount': amount,
             'projected_total_exposure': projected_exposure,
+            'available_credit': available_credit,
+            'remaining_available_margin': Decimal('0.00'),
+            'margin_remaining': Decimal('0.00'),
             'excess_amount': max(Decimal('0.00'), projected_exposure - credit_limit),
             'message': str(error_msg)
         }
@@ -119,6 +125,7 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
             raise ValidationError(warning_msg)
         return {
             'is_approved': False,
+            'allowed': False,
             'requires_management_override': True,
             'customer_code': customer.customer_code,
             'customer_status': customer.status,
@@ -126,18 +133,21 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
             'current_outstanding_balance': current_balance,
             'new_quotation_amount': amount,
             'projected_total_exposure': projected_exposure,
+            'available_credit': available_credit,
+            'remaining_available_margin': Decimal('0.00'),
+            'margin_remaining': Decimal('0.00'),
             'excess_amount': excess,
             'message': str(warning_msg)
         }
 
     # 3. Credit Approved
-    remaining_margin = credit_limit - projected_exposure if credit_limit > Decimal('0.00') else Decimal('0.00')
     success_msg = _(
         f"Credit validation passed for '{customer.company_name}'. "
         f"Projected exposure (LKR {projected_exposure:,.2f}) is within approved credit limits."
     )
     return {
         'is_approved': True,
+        'allowed': True,
         'requires_management_override': False,
         'customer_code': customer.customer_code,
         'customer_status': customer.status,
@@ -145,8 +155,10 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
         'current_outstanding_balance': current_balance,
         'new_quotation_amount': amount,
         'projected_total_exposure': projected_exposure,
-        'excess_amount': Decimal('0.00'),
+        'available_credit': available_credit,
         'remaining_available_margin': remaining_margin,
+        'margin_remaining': remaining_margin,
+        'excess_amount': Decimal('0.00'),
         'message': str(success_msg)
     }
 

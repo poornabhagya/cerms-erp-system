@@ -106,19 +106,19 @@
 {% if credit_check %}
 <div class="row mb-4">
     <div class="col-12">
-        {% if credit_check.allowed %}
+        {% if credit_check.is_approved or credit_check.allowed %}
         <div class="alert alert-success d-flex align-items-center mb-0 shadow-sm border-0" role="alert">
             <i class="bi bi-shield-check-fill fs-3 text-success me-3"></i>
             <div>
-                <strong class="d-block">Credit Limit Verification Passed</strong>
-                <small class="text-muted">{{ credit_check.message }} (Available Facility: Rs. {{ credit_check.available_credit|floatformat:2 }})</small>
+                <strong class="d-block text-success">Credit Check Passed (Margin Remaining: Rs. {{ credit_check.remaining_available_margin|floatformat:2 }})</strong>
+                <small class="text-muted">{{ credit_check.message }} (Available Facility: Rs. {{ credit_check.available_credit|floatformat:2 }} | Quote Value: Rs. {{ quotation.grand_total_amount|floatformat:2 }})</small>
             </div>
         </div>
         {% else %}
         <div class="alert alert-danger d-flex align-items-center mb-0 shadow-sm border-0" role="alert">
             <i class="bi bi-shield-x-fill fs-3 text-danger me-3"></i>
             <div>
-                <strong class="d-block">Credit Exposure Alert</strong>
+                <strong class="d-block text-danger">Credit Exposure Alert</strong>
                 <small>{{ credit_check.message }} (Available: Rs. {{ credit_check.available_credit|floatformat:2 }} vs Quote Grand Total: Rs. {{ quotation.grand_total_amount|floatformat:2 }})</small>
             </div>
         </div>
