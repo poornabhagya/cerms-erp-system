@@ -99,6 +99,17 @@
                 <i class="bi bi-shield-check me-1"></i> View Binding Contract ({{ quotation.contract.contract_no }})
             </a>
         {% endif %}
+
+        {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
+            {% if not has_contract and quotation.status != 'CONVERTED' %}
+            <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=quotation.quotation_no %}" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete quotation {{ quotation.quotation_no }}? This action cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger">
+                    <i class="bi bi-trash me-1"></i> Delete Quote
+                </button>
+            </form>
+            {% endif %}
+        {% endif %}
     </div>
 </div>
 

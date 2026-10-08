@@ -22,6 +22,7 @@ urlpatterns = [
     path('quotations/create/', views.QuotationCreateView.as_view(), name='quotation_create'),
     path('quotations/<str:quotation_no>/', views.QuotationDetailView.as_view(), name='quotation_detail'),
     path('quotations/<str:quotation_no>/edit/', views.QuotationUpdateView.as_view(), name='quotation_update'),
+    path('quotations/<str:quotation_no>/delete/', views.QuotationDeleteView.as_view(), name='quotation_delete'),
     path('quotations/<str:quotation_no>/transition/', views.QuotationStatusTransitionView.as_view(), name='quotation_transition'),
 
     # Rental Contract Endpoints

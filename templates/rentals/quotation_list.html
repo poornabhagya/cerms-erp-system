@@ -171,6 +171,16 @@
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 {% endif %}
+                                {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
+                                    {% if q.status != 'CONVERTED' %}
+                                    <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=q.quotation_no %}" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete quotation {{ q.quotation_no }}?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete Quotation">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                {% endif %}
                             </div>
                         </td>
                     </tr>

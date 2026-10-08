@@ -557,6 +557,47 @@ class QuotationStatusTransitionView(RoleRequiredMixin, View):
         return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
 
 
+class QuotationDeleteView(RoleRequiredMixin, View):
+    """
+    Administrator-only view to safely delete an unwanted/unconverted Quotation record.
+    Strictly restricted to ADMINISTRATOR role per docs/03_ROLES_AND_PERMISSIONS.md.
+    Enforces relational integrity checks: prevents deletion of quotations converted to binding RentalContracts.
+    """
+    allowed_roles = (User.Role.ADMINISTRATOR,)
+
+    def post(self, request, quotation_no):
+        quotation = get_object_or_404(Quotation, quotation_no=quotation_no)
+
+        # Relational Integrity Check: converted contract exists?
+        has_contract = hasattr(quotation, 'contract') or quotation.status == Quotation.Status.CONVERTED
+
+        if has_contract:
+            contract_ref = quotation.contract.contract_no if hasattr(quotation, 'contract') else "Binding Contract"
+            messages.error(
+                request,
+                f"Cannot delete Quotation '{quotation.quotation_no}' because it has already been converted into a "
+                f"legally binding Rental Contract ({contract_ref})."
+            )
+            next_url = request.POST.get('next') or request.META.get('HTTP_REFERER')
+            if next_url:
+                return redirect(next_url)
+            return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
+
+        # Safe deletion
+        quote_no = quotation.quotation_no
+        customer_name = quotation.customer.company_name
+        quotation.delete()
+
+        messages.success(
+            request,
+            f"Quotation '{quote_no}' ({customer_name}) was successfully deleted."
+        )
+        next_url = request.POST.get('next')
+        if next_url:
+            return redirect(next_url)
+        return redirect('rentals:quotation_list')
+
+
 # ==============================================================================
 # 3. RENTAL CONTRACT & LOGISTICS (DISPATCH / RETURN) VIEWS
 # ==============================================================================

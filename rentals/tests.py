@@ -773,3 +773,118 @@ class ProjectSiteAutoCodeAndDeletionTestCase(TestCase):
         self.assertTrue(ProjectSite.objects.filter(project_code=site.project_code).exists())
 
 
+class QuotationDeletionSecurityTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin_quote_user',
+            email='admin_quote@cerms.com',
+            password='Password123!',
+            role=User.Role.ADMINISTRATOR
+        )
+        self.rental_officer = User.objects.create_user(
+            username='ro_quote_user',
+            email='ro_quote@cerms.com',
+            password='Password123!',
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.customer = Customer.objects.create(
+            customer_code='CUST-2026-099',
+            company_name='Keangnam Enterprises',
+            contact_person='Mr. Kim',
+            phone='+94778889900',
+            email='kim@keangnam.lk',
+            billing_address='Colombo 03',
+            credit_limit=Decimal('5000000.00'),
+            status=Customer.Status.ACTIVE
+        )
+        self.site = ProjectSite.objects.create(
+            project_code='PRJ-099-01',
+            customer=self.customer,
+            project_name='Port City Complex',
+            site_address='Port City, Colombo',
+            status=ProjectSite.Status.ACTIVE
+        )
+        self.category = Category.objects.create(name='Mobile Cranes', code='CRN')
+        self.equipment = Equipment.objects.create(
+            asset_code='EQ-CRN-KATO-50T-001',
+            equipment_name='Kato 50T Rough Terrain Crane',
+            category=self.category,
+            brand='Kato',
+            model_number='KR500',
+            serial_number='KATO-KR500-2024',
+            manufacture_year=2024,
+            purchase_cost=Decimal('65000000.00'),
+            purchase_date=date.today(),
+            current_hour_meter=Decimal('500.00'),
+            status=Equipment.Status.AVAILABLE
+        )
+
+    def test_admin_can_delete_unconverted_quotation(self):
+        quote = Quotation.objects.create(
+            quotation_no='QT-2026-8888',
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            rate_applied=Decimal('80000.00'),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.DRAFT
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(f'/rentals/quotations/{quote.quotation_no}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Quotation.objects.filter(quotation_no='QT-2026-8888').exists())
+
+    def test_non_admin_cannot_delete_quotation(self):
+        quote = Quotation.objects.create(
+            quotation_no='QT-2026-8889',
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            rate_applied=Decimal('80000.00'),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.DRAFT
+        )
+        self.client.force_login(self.rental_officer)
+        response = self.client.post(f'/rentals/quotations/{quote.quotation_no}/delete/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Quotation.objects.filter(quotation_no='QT-2026-8889').exists())
+
+    def test_admin_cannot_delete_converted_quotation(self):
+        quote = Quotation.objects.create(
+            quotation_no='QT-2026-8890',
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            rate_applied=Decimal('80000.00'),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.CONVERTED
+        )
+        contract = RentalContract.objects.create(
+            contract_no='CNT-2026-8890',
+            quotation=quote,
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            contract_start_date=date(2026, 11, 1),
+            contract_end_date=date(2026, 11, 5),
+            billing_cycle=RentalContract.BillingCycle.MONTHLY,
+            agreed_rate=Decimal('80000.00'),
+            deposit_paid=Decimal('200000.00'),
+            status=RentalContract.Status.ACTIVE
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(f'/rentals/quotations/{quote.quotation_no}/delete/')
+        self.assertEqual(response.status_code, 302)
+        # Quotation must still exist
+        self.assertTrue(Quotation.objects.filter(quotation_no='QT-2026-8890').exists())
+
+
