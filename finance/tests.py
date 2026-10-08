@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from users.models import User
 from fleet.models import Category, Equipment
-from rentals.models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
+from rentals.models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
 from finance.models import Invoice, Payment, SecurityDeposit
 from finance.services import (
     generate_final_rental_invoice,
@@ -68,10 +68,8 @@ class FinanceModelTests(TestCase):
             quotation_no="QT-2026-FIN-001",
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 30),
-            rate_applied=Decimal("450000.00"),
             rate_type=Quotation.RateType.MONTHLY,
             estimated_transport_cost=Decimal("50000.00"),
             security_deposit_required=Decimal("200000.00"),
@@ -79,6 +77,15 @@ class FinanceModelTests(TestCase):
             total_tax_amount=Decimal("81000.00"),
             grand_total_amount=Decimal("581000.00"),
             status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 30),
+            rate_applied=Decimal("450000.00"),
+            rate_type=Quotation.RateType.MONTHLY,
+            subtotal_amount=Decimal("450000.00")
         )
 
         self.contract = RentalContract.objects.create(
@@ -93,6 +100,14 @@ class FinanceModelTests(TestCase):
             agreed_rate=Decimal("450000.00"),
             deposit_paid=Decimal("200000.00"),
             status=RentalContract.Status.ACTIVE
+        )
+        RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 30),
+            rate_applied=Decimal("450000.00"),
+            subtotal_amount=Decimal("450000.00")
         )
 
     def test_invoice_creation_and_properties(self):
@@ -228,10 +243,8 @@ class FinanceServicesAndViewsTests(TestCase):
             quotation_no="QT-2026-SRV-001",
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 10),
-            rate_applied=Decimal("45000.00"),
             rate_type=Quotation.RateType.DAILY,
             estimated_transport_cost=Decimal("30000.00"),
             security_deposit_required=Decimal("100000.00"),
@@ -239,6 +252,15 @@ class FinanceServicesAndViewsTests(TestCase):
             total_tax_amount=Decimal("86400.00"),
             grand_total_amount=Decimal("566400.00"),
             status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("45000.00"),
+            rate_type=Quotation.RateType.DAILY,
+            subtotal_amount=Decimal("450000.00")
         )
 
         self.contract = RentalContract.objects.create(
@@ -253,6 +275,14 @@ class FinanceServicesAndViewsTests(TestCase):
             agreed_rate=Decimal("45000.00"),
             deposit_paid=Decimal("100000.00"),
             status=RentalContract.Status.RETURNED
+        )
+        RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("450000.00")
         )
 
         self.dispatch = DispatchReturn.objects.create(

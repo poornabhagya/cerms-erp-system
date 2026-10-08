@@ -41,7 +41,7 @@ class InvoiceGenerationForm(forms.Form):
     apply_security_deposit = forms.BooleanField(
         required=False,
         initial=True,
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
         label="Automatically Offset Held Security Deposit",
         help_text="Deducts held escrow cash deposit from final net payable amount."
     )

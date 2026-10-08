@@ -77,12 +77,18 @@
                         </div>
                     </div>
 
-                    <div class="form-check form-switch mb-4 p-3 bg-light rounded-3 border">
-                        {{ form.apply_security_deposit }}
-                        <label class="form-check-label fw-semibold ms-2" for="{{ form.apply_security_deposit.id_for_label }}">
-                            Automatically Offset Security Deposit
-                        </label>
-                        <div class="text-muted small ms-2">Deducts held cash deposit from the final settlement invoice total.</div>
+                    <div class="card bg-light border rounded-3 mb-4">
+                        <div class="card-body p-3">
+                            <div class="form-check form-switch mb-0 ps-5">
+                                {{ form.apply_security_deposit }}
+                                <label class="form-check-label fw-bold text-dark d-block mb-1" for="{{ form.apply_security_deposit.id_for_label }}" style="cursor: pointer;">
+                                    Automatically Offset Security Deposit
+                                </label>
+                                <div class="text-muted small">
+                                    Deducts held cash deposit from the final settlement invoice total.
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="d-flex justify-content-between">
