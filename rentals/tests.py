@@ -5,9 +5,9 @@ from django.core.exceptions import ValidationError
 
 from users.models import User
 from fleet.models import Category, Equipment
-from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
-from .services import validate_customer_credit_limit, calculate_quotation_totals
-from .forms import QuotationForm
+from .models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
+from .services import validate_customer_credit_limit, calculate_quotation_totals, convert_quotation_to_contract
+from .forms import QuotationForm, QuotationItemForm, QuotationItemFormSet
 
 
 class CustomerModelTestCase(TestCase):
@@ -164,10 +164,6 @@ class CustomerViewsTestCase(TestCase):
 
 class QuotationContractModelTestCase(TestCase):
     def setUp(self):
-        from users.models import User
-        from fleet.models import Category, Equipment
-        from datetime import date, datetime
-
         self.user = User.objects.create_user(
             username="ops_officer",
             email="ops@cerms.com",
@@ -213,22 +209,44 @@ class QuotationContractModelTestCase(TestCase):
             status=Equipment.Status.AVAILABLE
         )
 
+        self.equipment2 = Equipment.objects.create(
+            asset_code="EQ-KOM-PC200-001",
+            equipment_name="Komatsu PC200-8 Excavator",
+            category=self.category,
+            brand="Komatsu",
+            model_number="PC200-8",
+            serial_number="KOMPC200-2026-001",
+            manufacture_year=2024,
+            purchase_cost=Decimal("32000000.00"),
+            purchase_date=date(2024, 2, 1),
+            current_hour_meter=Decimal("950.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
         self.quotation = Quotation.objects.create(
             quotation_no="QT-2026-0001",
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 10),
-            rate_applied=Decimal("45000.00"),
             rate_type=Quotation.RateType.DAILY,
             estimated_transport_cost=Decimal("50000.00"),
             security_deposit_required=Decimal("100000.00"),
             discount_percentage=Decimal("5.00"),
-            subtotal_amount=Decimal("427500.00"),
-            total_tax_amount=Decimal("76950.00"),
-            grand_total_amount=Decimal("554450.00"),
+            subtotal_amount=Decimal("450000.00"),
+            total_tax_amount=Decimal("85950.00"),
+            grand_total_amount=Decimal("563450.00"),
             status=Quotation.Status.DRAFT
+        )
+
+        self.quotation_item = QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_type=Quotation.RateType.DAILY,
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("450000.00")
         )
 
         self.contract = RentalContract.objects.create(
@@ -243,6 +261,16 @@ class QuotationContractModelTestCase(TestCase):
             agreed_rate=Decimal("45000.00"),
             deposit_paid=Decimal("100000.00"),
             status=RentalContract.Status.ACTIVE
+        )
+
+        self.contract_item = RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_type=Quotation.RateType.DAILY,
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("450000.00")
         )
 
         self.dispatch_return = DispatchReturn.objects.create(
@@ -260,15 +288,17 @@ class QuotationContractModelTestCase(TestCase):
         self.assertEqual(str(self.quotation), "QT-2026-0001 - Sanken Construction (Draft)")
         self.assertEqual(self.quotation.duration_days, 10)
         self.assertEqual(self.quotation.rental_duration_days, 10)
-        self.assertEqual(self.quotation.discount_amount, Decimal("21375.00"))  # 5% of 427,500
+        self.assertEqual(self.quotation.discount_amount, Decimal("22500.00"))  # 5% of 450,000
+        self.assertEqual(self.quotation.taxable_base_amount, Decimal("477500.00")) # 450,000 - 22,500 + 50,000
         self.assertFalse(self.quotation.is_approved)
 
-    def test_quotation_calculation_service(self):
+    def test_quotation_calculation_service_single_item(self):
         # 10 days @ 45,000 = 450,000 base
         # 5% discount = 22,500
         # Transport = 50,000
-        # VAT 18% on (450,000 - 22,500 + 50,000) = 18% of 477,500 = 85,950
-        # Grand Total = (450,000 + 50,000 + 85,950) - 22,500 = 563,450.00
+        # Taxable Base = 450,000 - 22,500 + 50,000 = 477,500
+        # VAT 18% = 85,950
+        # Grand Total = 477,500 + 85,950 = 563,450.00
         result = calculate_quotation_totals(
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 10),
@@ -279,22 +309,86 @@ class QuotationContractModelTestCase(TestCase):
         self.assertEqual(result['duration_days'], 10)
         self.assertEqual(result['base_tariff'], Decimal("450000.00"))
         self.assertEqual(result['discount_amount'], Decimal("22500.00"))
+        self.assertEqual(result['taxable_base'], Decimal("477500.00"))
         self.assertEqual(result['estimated_transport_cost'], Decimal("50000.00"))
         self.assertEqual(result['total_tax_amount'], Decimal("85950.00"))
         self.assertEqual(result['grand_total_amount'], Decimal("563450.00"))
-        # Ensure grand_total is NOT equal to discount_amount
-        self.assertNotEqual(result['grand_total_amount'], result['discount_amount'])
+
+    def test_multi_item_quotation_calculations(self):
+        # Multi-Item Quote:
+        # Item 1: 10 days @ 45,000 = 450,000
+        # Item 2: 5 days @ 40,000 = 200,000
+        # Base Tariff = 650,000
+        # Transport = 60,000
+        # Discount 10% = 65,000
+        # Taxable Base = (650,000 - 65,000) + 60,000 = 645,000
+        # VAT 18% = 116,100
+        # Grand Total = 645,000 + 116,100 = 761,100.00
+        items = [
+            {'start_date': date(2026, 11, 1), 'end_date': date(2026, 11, 10), 'rate_applied': Decimal('45000.00'), 'subtotal_amount': Decimal('450000.00')},
+            {'start_date': date(2026, 11, 1), 'end_date': date(2026, 11, 5), 'rate_applied': Decimal('40000.00'), 'subtotal_amount': Decimal('200000.00')},
+        ]
+        result = calculate_quotation_totals(
+            items=items,
+            estimated_transport_cost=Decimal('60000.00'),
+            discount_percentage=Decimal('10.00'),
+        )
+        self.assertEqual(result['base_tariff'], Decimal('650000.00'))
+        self.assertEqual(result['discount_amount'], Decimal('65000.00'))
+        self.assertEqual(result['taxable_base'], Decimal('645000.00'))
+        self.assertEqual(result['total_tax_amount'], Decimal('116100.00'))
+        self.assertEqual(result['grand_total_amount'], Decimal('761100.00'))
+
+    def test_multi_item_quotation_contract_conversion(self):
+        # Create quote with 2 items and mark accepted
+        quote = Quotation.objects.create(
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            subtotal_amount=Decimal('650000.00'),
+            discount_percentage=Decimal('10.00'),
+            estimated_transport_cost=Decimal('60000.00'),
+            security_deposit_required=Decimal('150000.00'),
+            total_tax_amount=Decimal('116100.00'),
+            grand_total_amount=Decimal('761100.00'),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.equipment,
+            rate_applied=Decimal('45000.00'),
+            subtotal_amount=Decimal('450000.00')
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.equipment2,
+            rate_applied=Decimal('40000.00'),
+            subtotal_amount=Decimal('200000.00')
+        )
+
+        contract = convert_quotation_to_contract(quote.quotation_no, user=self.user)
+        self.assertEqual(contract.customer, self.customer)
+        self.assertEqual(contract.items.count(), 2)
+
+        # Verify machinery assets transitioned to RESERVED
+        self.equipment.refresh_from_db()
+        self.equipment2.refresh_from_db()
+        self.assertEqual(self.equipment.status, Equipment.Status.RESERVED)
+        self.assertEqual(self.equipment2.status, Equipment.Status.RESERVED)
+
+        # Verify quote marked converted
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quotation.Status.CONVERTED)
 
     def test_quotation_model_save_and_calculate_totals(self):
-        # Test Quotation model calculation
         q = Quotation.objects.create(
             quotation_no="QT-2026-9999",
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 10, 6),
             end_date=date(2026, 10, 6),  # 1 day
-            rate_applied=Decimal("450000.00"),
+            subtotal_amount=Decimal("450000.00"),
             rate_type=Quotation.RateType.DAILY,
             estimated_transport_cost=Decimal("25000.00"),
             discount_percentage=Decimal("5.00"),
@@ -310,11 +404,9 @@ class QuotationContractModelTestCase(TestCase):
             'quotation_no': 'QT-2026-0002',
             'customer': self.customer.pk,
             'project_site': self.site.pk,
-            'equipment': self.equipment.pk,
             'start_date': '2026-11-01',
             'end_date': '2026-11-10',
             'rate_type': Quotation.RateType.DAILY,
-            'rate_applied': '45000.00',
             'estimated_transport_cost': '50000.00',
             'security_deposit_required': '100000.00',
             'discount_percentage': '5.00',
@@ -342,10 +434,8 @@ class QuotationContractModelTestCase(TestCase):
         new_quote = Quotation.objects.create(
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 11, 15),
             end_date=date(2026, 11, 20),
-            rate_applied=Decimal("50000.00"),
             rate_type=Quotation.RateType.DAILY,
         )
         self.assertEqual(new_quote.quotation_no, "QT-2026-0002")
@@ -355,10 +445,8 @@ class QuotationContractModelTestCase(TestCase):
             quotation_no="QT-2026-0010",
             customer=self.customer,
             project_site=self.site,
-            equipment=self.equipment,
             start_date=date(2026, 12, 1),
             end_date=date(2026, 12, 5),
-            rate_applied=Decimal("50000.00"),
             rate_type=Quotation.RateType.DAILY,
         )
         # Next code should be QT-2026-0011
@@ -375,14 +463,13 @@ class QuotationContractModelTestCase(TestCase):
         form_data = {
             'customer': self.customer.pk,
             'project_site': self.site.pk,
-            'equipment': self.equipment.pk,
             'start_date': '2026-11-01',
             'end_date': '2026-11-10',
             'rate_type': Quotation.RateType.DAILY,
-            'rate_applied': '45000.00',
             'estimated_transport_cost': '50000.00',
             'security_deposit_required': '100000.00',
             'discount_percentage': '5.00',
+            'subtotal_amount': '450000.00',
             'status': Quotation.Status.DRAFT,
         }
         form = QuotationForm(data=form_data)
@@ -487,13 +574,19 @@ class AvailabilityCalendarAndConflictTests(TestCase):
             quotation_no="QT-2026-9999",
             customer=self.customer,
             project_site=self.site,
+            start_date=date(2026, 11, 20),
+            end_date=date(2026, 11, 25),
+            subtotal_amount=Decimal("270000.00"),
+            grand_total_amount=Decimal("318600.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=self.quote_reserved,
             equipment=self.eq_available,
             start_date=date(2026, 11, 20),
             end_date=date(2026, 11, 25),
             rate_applied=Decimal("45000.00"),
-            subtotal_amount=Decimal("270000.00"),
-            grand_total_amount=Decimal("318600.00"),
-            status=Quotation.Status.ACCEPTED
+            subtotal_amount=Decimal("270000.00")
         )
 
         # Active Contract for eq_rented from Nov 1 to Nov 15
@@ -501,13 +594,19 @@ class AvailabilityCalendarAndConflictTests(TestCase):
             quotation_no="QT-2026-8888",
             customer=self.customer,
             project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            subtotal_amount=Decimal("750000.00"),
+            grand_total_amount=Decimal("885000.00"),
+            status=Quotation.Status.CONVERTED
+        )
+        QuotationItem.objects.create(
+            quotation=self.contract_quote,
             equipment=self.eq_rented,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 15),
             rate_applied=Decimal("50000.00"),
-            subtotal_amount=Decimal("750000.00"),
-            grand_total_amount=Decimal("885000.00"),
-            status=Quotation.Status.CONVERTED
+            subtotal_amount=Decimal("750000.00")
         )
 
         self.contract_active = RentalContract.objects.create(
@@ -520,6 +619,14 @@ class AvailabilityCalendarAndConflictTests(TestCase):
             contract_end_date=date(2026, 11, 15),
             agreed_rate=Decimal("50000.00"),
             status=RentalContract.Status.ON_RENT
+        )
+        RentalContractItem.objects.create(
+            contract=self.contract_active,
+            equipment=self.eq_rented,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("750000.00")
         )
 
     def test_overlap_detection_query(self):
@@ -753,17 +860,23 @@ class ProjectSiteAutoCodeAndDeletionTestCase(TestCase):
             site_address="Kurunegala",
             status=ProjectSite.Status.ACTIVE
         )
-        Quotation.objects.create(
+        quote = Quotation.objects.create(
             quotation_no="QT-2026-5555",
             customer=self.customer,
             project_site=site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            subtotal_amount=Decimal("900000.00"),
+            grand_total_amount=Decimal("1062000.00"),
+            status=Quotation.Status.DRAFT
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
             equipment=equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 15),
             rate_applied=Decimal("60000.00"),
-            subtotal_amount=Decimal("900000.00"),
-            grand_total_amount=Decimal("1062000.00"),
-            status=Quotation.Status.DRAFT
+            subtotal_amount=Decimal("900000.00")
         )
 
         self.client.force_login(self.admin)
@@ -824,13 +937,19 @@ class QuotationDeletionSecurityTests(TestCase):
             quotation_no='QT-2026-8888',
             customer=self.customer,
             project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.DRAFT
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
             equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 5),
             rate_applied=Decimal('80000.00'),
-            subtotal_amount=Decimal('400000.00'),
-            grand_total_amount=Decimal('472000.00'),
-            status=Quotation.Status.DRAFT
+            subtotal_amount=Decimal('400000.00')
         )
         self.client.force_login(self.admin)
         response = self.client.post(f'/rentals/quotations/{quote.quotation_no}/delete/')
@@ -842,13 +961,19 @@ class QuotationDeletionSecurityTests(TestCase):
             quotation_no='QT-2026-8889',
             customer=self.customer,
             project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.DRAFT
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
             equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 5),
             rate_applied=Decimal('80000.00'),
-            subtotal_amount=Decimal('400000.00'),
-            grand_total_amount=Decimal('472000.00'),
-            status=Quotation.Status.DRAFT
+            subtotal_amount=Decimal('400000.00')
         )
         self.client.force_login(self.rental_officer)
         response = self.client.post(f'/rentals/quotations/{quote.quotation_no}/delete/')
@@ -860,13 +985,19 @@ class QuotationDeletionSecurityTests(TestCase):
             quotation_no='QT-2026-8890',
             customer=self.customer,
             project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal('400000.00'),
+            grand_total_amount=Decimal('472000.00'),
+            status=Quotation.Status.CONVERTED
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
             equipment=self.equipment,
             start_date=date(2026, 11, 1),
             end_date=date(2026, 11, 5),
             rate_applied=Decimal('80000.00'),
-            subtotal_amount=Decimal('400000.00'),
-            grand_total_amount=Decimal('472000.00'),
-            status=Quotation.Status.CONVERTED
+            subtotal_amount=Decimal('400000.00')
         )
         contract = RentalContract.objects.create(
             contract_no='CNT-2026-8890',

@@ -141,43 +141,61 @@
 <div class="row g-4">
     <!-- Left Column: Scope, Pricing & Financial Breakdown -->
     <div class="col-12 col-lg-8">
-        <!-- Rental Period & Machine Scope Card -->
+        <!-- Multi-Item Equipment Scope Table Card -->
         <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header bg-white py-3 border-bottom">
-                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Machine & Schedule Specification</h5>
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-truck text-primary me-2"></i> Machinery Asset Line Items ({{ quotation.items.count }})
+                </h5>
+                <span class="badge bg-light text-dark border font-monospace">
+                    Overall Duration: {{ quotation.rental_duration_days }} Days ({{ quotation.start_date|date:"M d, Y" }} – {{ quotation.end_date|date:"M d, Y" }})
+                </span>
             </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <div class="p-3 bg-light rounded-3 border">
-                            <small class="text-muted text-uppercase fw-bold d-block mb-1">Equipment Asset</small>
-                            <h6 class="fw-bold text-dark mb-1">{{ quotation.equipment.equipment_name }}</h6>
-                            <div class="d-flex align-items-center gap-2 mt-2">
-                                <span class="badge bg-dark font-monospace">{{ quotation.equipment.asset_code }}</span>
-                                <span class="badge bg-secondary">{{ quotation.equipment.category.name|default:"General Fleet" }}</span>
-                                <span class="badge bg-info text-dark">Meter: {{ quotation.equipment.current_hour_meter }} hrs</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <div class="p-3 bg-light rounded-3 border">
-                            <small class="text-muted text-uppercase fw-bold d-block mb-1">Rental Timeline</small>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <div class="fw-bold text-dark">{{ quotation.start_date|date:"M d, Y" }}</div>
-                                    <small class="text-muted">Mobilization Date</small>
-                                </div>
-                                <i class="bi bi-arrow-right text-muted fs-5"></i>
-                                <div>
-                                    <div class="fw-bold text-dark">{{ quotation.end_date|date:"M d, Y" }}</div>
-                                    <small class="text-muted">Estimated Return</small>
-                                </div>
-                            </div>
-                            <div class="mt-2 text-primary fw-semibold small">
-                                <i class="bi bi-clock-history me-1"></i> Estimated Duration: {{ quotation.rental_duration_days }} Days
-                            </div>
-                        </div>
-                    </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Equipment Asset</th>
+                                <th>Schedule</th>
+                                <th>Billing Rate</th>
+                                <th class="text-end pe-3">Line Subtotal (LKR)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in quotation.items.all %}
+                            <tr>
+                                <td class="ps-3">
+                                    <div class="fw-bold text-dark">{{ item.equipment.equipment_name }}</div>
+                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                        <a href="{% url 'fleet:equipment_detail' asset_code=item.equipment.asset_code %}" class="badge bg-dark font-monospace text-decoration-none">
+                                            {{ item.equipment.asset_code }}
+                                        </a>
+                                        <span class="badge bg-secondary">{{ item.equipment.category.name|default:"General Fleet" }}</span>
+                                        <span class="badge bg-info text-dark">Meter: {{ item.equipment.current_hour_meter }} hrs</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="small fw-semibold">{{ item.item_start_date|date:"M d, Y" }} &rarr; {{ item.item_end_date|date:"M d, Y" }}</div>
+                                    <small class="text-muted"><i class="bi bi-clock-history me-1"></i> {{ item.duration_days }} Days</small>
+                                </td>
+                                <td>
+                                    <span class="font-monospace fw-semibold">Rs. {{ item.rate_applied|floatformat:2 }}</span>
+                                    <small class="text-muted d-block">{{ item.get_rate_type_display }}</small>
+                                </td>
+                                <td class="text-end pe-3 font-monospace fw-bold text-dark">
+                                    Rs. {{ item.subtotal_amount|floatformat:2 }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">
+                                    <i class="bi bi-info-circle me-1"></i> No equipment line items registered for this quotation.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -185,14 +203,14 @@
         <!-- Commercial Pricing & Financial Breakdown Card -->
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-white py-3 border-bottom">
-                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-receipt text-success me-2"></i> Commercial Pricing Breakdown</h5>
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-receipt text-success me-2"></i> Commercial Pricing & Tax Breakdown</h5>
             </div>
             <div class="card-body p-0">
                 <table class="table align-middle mb-0">
                     <thead class="table-light">
                         <tr>
                             <th class="ps-4">Line Item / Commercial Charge</th>
-                            <th>Basis / Rate</th>
+                            <th>Calculation Basis</th>
                             <th class="text-end pe-4">Amount (LKR)</th>
                         </tr>
                     </thead>
@@ -200,11 +218,9 @@
                         <tr>
                             <td class="ps-4">
                                 <div class="fw-semibold">Base Machinery Rental Tariff</div>
-                                <small class="text-muted">{{ quotation.rental_duration_days }} Days @ {{ quotation.get_rate_type_display }} Billing</small>
+                                <small class="text-muted">Cumulative sum of all active equipment line items</small>
                             </td>
-                            <td>
-                                <span class="font-monospace">Rs. {{ quotation.rate_applied|floatformat:2 }}</span>
-                            </td>
+                            <td>{{ quotation.items.count }} Asset Item(s)</td>
                             <td class="text-end pe-4 font-monospace fw-semibold">
                                 Rs. {{ quotation.subtotal_amount|floatformat:2 }}
                             </td>
@@ -212,9 +228,9 @@
                         <tr>
                             <td class="ps-4">
                                 <div class="fw-semibold">Estimated Transport & Mobilization</div>
-                                <small class="text-muted">Round-trip low-bed logistics to project site</small>
+                                <small class="text-muted">Round-trip logistics to designated project site</small>
                             </td>
-                            <td>—</td>
+                            <td>Fixed Mobilization</td>
                             <td class="text-end pe-4 font-monospace">
                                 Rs. {{ quotation.estimated_transport_cost|floatformat:2 }}
                             </td>
@@ -224,25 +240,32 @@
                             <td class="ps-4 text-danger">
                                 <div class="fw-semibold">Special Commercial Discount ({{ quotation.discount_percentage }}%)</div>
                             </td>
-                            <td>—</td>
+                            <td>Applied against Base Tariff</td>
                             <td class="text-end pe-4 font-monospace text-danger">
                                 - Rs. {{ quotation.discount_amount|floatformat:2 }}
                             </td>
                         </tr>
                         {% endif %}
+                        <tr class="table-light">
+                            <td class="ps-4 text-muted small fw-bold">Taxable Base Amount</td>
+                            <td class="text-muted small">(Base - Discount) + Transport</td>
+                            <td class="text-end pe-4 font-monospace text-muted small fw-bold">
+                                Rs. {{ quotation.taxable_base_amount|floatformat:2 }}
+                            </td>
+                        </tr>
                         <tr>
                             <td class="ps-4">
-                                <div class="fw-semibold">Applicable Value Added Tax (VAT)</div>
-                                <small class="text-muted">Statutory Corporate Tax Rate</small>
+                                <div class="fw-semibold">Applicable Value Added Tax (VAT 18%)</div>
+                                <small class="text-muted">Statutory Corporate Tax Rate on Taxable Base</small>
                             </td>
-                            <td>—</td>
+                            <td>18.00% Statutory</td>
                             <td class="text-end pe-4 font-monospace">
                                 Rs. {{ quotation.total_tax_amount|floatformat:2 }}
                             </td>
                         </tr>
                         <tr class="table-dark">
                             <td class="ps-4 fw-bold fs-6">Grand Total Commercial Value</td>
-                            <td></td>
+                            <td class="small text-muted text-uppercase">Taxable Base + VAT</td>
                             <td class="text-end pe-4 font-monospace fw-bold fs-5 text-warning">
                                 Rs. {{ quotation.grand_total_amount|floatformat:2 }}
                             </td>
@@ -335,7 +358,7 @@
                 </div>
                 <div class="modal-body">
                     <p class="small text-muted mb-3">
-                        Converting this quotation will generate an active <strong>RentalContract</strong>, bind the agreed financial rates, transition the equipment status to <strong>RESERVED</strong>, and update the quotation status to <strong>CONVERTED</strong>.
+                        Converting this quotation will generate an active <strong>RentalContract</strong> with <strong>{{ quotation.items.count }} equipment item(s)</strong>, transition each machinery status to <strong>RESERVED</strong>, and update the quotation status to <strong>CONVERTED</strong>.
                     </p>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Contract Billing Cycle</label>
@@ -346,7 +369,7 @@
                         </select>
                     </div>
                     <div class="alert alert-info py-2 small mb-0">
-                        <i class="bi bi-info-circle me-1"></i> Machine <strong>{{ quotation.equipment.asset_code }}</strong> will be locked for other bookings during this period.
+                        <i class="bi bi-info-circle me-1"></i> All <strong>{{ quotation.items.count }} machinery assets</strong> will be reserved exclusively for this project deployment.
                     </div>
                 </div>
                 <div class="modal-footer">

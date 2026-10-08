@@ -9,10 +9,11 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from fleet.models import Equipment
-from .models import Customer, Quotation, RentalContract, DispatchReturn
+from .models import Customer, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
 
 
 def calculate_quotation_totals(
+    items=None,
     start_date=None,
     end_date=None,
     rate_applied: Decimal = Decimal('0.00'),
@@ -25,15 +26,18 @@ def calculate_quotation_totals(
 ) -> Dict[str, Decimal]:
     """
     Computes commercial quotation financial figures adhering strictly to the business rule:
-    Grand Total = (Base Tariff + Transport + VAT) - Discount
+    Taxable Base = (Base Tariff - Discount Amount) + Estimated Transport Cost
+    VAT (18%) = Taxable Base * 0.18
+    Grand Total = Taxable Base + VAT = (Base Tariff + Transport + VAT) - Discount
 
     Parameters:
+    - items: Optional list/iterable of QuotationItem objects or item dicts with 'subtotal_amount'
     - start_date / end_date: Rental schedule to calculate duration in days
-    - rate_applied: Rate per unit
+    - rate_applied: Rate per unit (for single-item fallback)
     - estimated_transport_cost: Round-trip logistics
     - discount_percentage: Percentage discount (0-100%)
-    - subtotal_amount: Base tariff if pre-set, otherwise duration_days * rate_applied
-    - total_tax_amount: Custom VAT/tax if pre-set, otherwise statutory 18% on (Base - Discount + Transport)
+    - subtotal_amount: Base tariff if pre-set, otherwise computed from items or duration_days * rate_applied
+    - total_tax_amount: Custom VAT/tax if pre-set, otherwise statutory 18% on Taxable Base
     """
     days = 1
     if start_date and end_date:
@@ -44,31 +48,55 @@ def calculate_quotation_totals(
         if end_date >= start_date:
             days = max(1, (end_date - start_date).days + 1)
 
-    rate = Decimal(str(rate_applied or 0))
     transport = Decimal(str(estimated_transport_cost or 0))
     discount_pct = Decimal(str(discount_percentage or 0))
 
-    if subtotal_amount is not None:
+    if items:
+        # Sum subtotals of all line items
+        base_tariff = Decimal('0.00')
+        for itm in items:
+            if isinstance(itm, dict):
+                sub = itm.get('subtotal_amount')
+                if sub is not None:
+                    base_tariff += Decimal(str(sub))
+                else:
+                    itm_rate = Decimal(str(itm.get('rate_applied') or 0))
+                    itm_s = itm.get('start_date') or start_date
+                    itm_e = itm.get('end_date') or end_date
+                    itm_days = days
+                    if itm_s and itm_e:
+                        if isinstance(itm_s, str):
+                            itm_s = datetime.strptime(itm_s, '%Y-%m-%d').date()
+                        if isinstance(itm_e, str):
+                            itm_e = datetime.strptime(itm_e, '%Y-%m-%d').date()
+                        if itm_e >= itm_s:
+                            itm_days = max(1, (itm_e - itm_s).days + 1)
+                    base_tariff += (Decimal(itm_days) * itm_rate).quantize(Decimal('0.01'))
+            elif hasattr(itm, 'subtotal_amount'):
+                base_tariff += Decimal(str(itm.subtotal_amount or 0))
+    elif subtotal_amount is not None:
         base_tariff = Decimal(str(subtotal_amount))
     else:
+        rate = Decimal(str(rate_applied or 0))
         base_tariff = Decimal(days) * rate
 
-    discount_amount = (base_tariff * discount_pct) / Decimal('100.00')
+    discount_amount = ((base_tariff * discount_pct) / Decimal('100.00')).quantize(Decimal('0.01'))
+    taxable_base = max(Decimal('0.00'), (base_tariff - discount_amount) + transport)
 
     if total_tax_amount is not None and Decimal(str(total_tax_amount)) > Decimal('0.00'):
-        tax_amount = Decimal(str(total_tax_amount))
+        tax_amount = Decimal(str(total_tax_amount)).quantize(Decimal('0.01'))
     else:
-        taxable = max(Decimal('0.00'), (base_tariff - discount_amount) + transport)
-        tax_amount = (taxable * Decimal(str(tax_rate))).quantize(Decimal('0.01'))
+        tax_amount = (taxable_base * Decimal(str(tax_rate))).quantize(Decimal('0.01'))
 
-    # Formula: (Base Tariff + Transport + VAT) - Discount
-    grand_total = (base_tariff + transport + tax_amount) - discount_amount
+    # Formula: Grand Total = Taxable Base + VAT = (Base Tariff + Transport + VAT) - Discount
+    grand_total = (taxable_base + tax_amount).quantize(Decimal('0.01'))
 
     return {
         'duration_days': days,
         'base_tariff': base_tariff.quantize(Decimal('0.01')),
         'subtotal_amount': base_tariff.quantize(Decimal('0.01')),
         'discount_amount': discount_amount.quantize(Decimal('0.01')),
+        'taxable_base': taxable_base.quantize(Decimal('0.01')),
         'estimated_transport_cost': transport.quantize(Decimal('0.01')),
         'total_tax_amount': tax_amount.quantize(Decimal('0.01')),
         'grand_total_amount': grand_total.quantize(Decimal('0.01')),
@@ -166,13 +194,15 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
 def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: str = 'MONTHLY') -> RentalContract:
     """
     Converts an accepted commercial quotation into a legally binding RentalContract.
-    Transitions machinery to RESERVED and audits status changes.
+    Generates corresponding RentalContractItem line entries for all quoted assets,
+    transitions each machinery asset to RESERVED, and audits status changes.
 
     Step 4.2 State Machine Workflow:
     1. Validates quotation status is ACCEPTED (or approved).
     2. Creates RentalContract with agreed financial values.
-    3. Transitions Equipment.status -> RESERVED.
-    4. Marks Quotation.status -> CONVERTED.
+    3. Creates RentalContractItem records for each quoted equipment asset.
+    4. Transitions each Equipment.status -> RESERVED.
+    5. Marks Quotation.status -> CONVERTED.
     """
     with transaction.atomic():
         quotation = Quotation.objects.select_for_update().get(quotation_no=quotation_id)
@@ -188,24 +218,42 @@ def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: s
         contract_count = RentalContract.objects.filter(contract_no__startswith=f"CNT-{current_year}-").count() + 1
         contract_no = f"CNT-{current_year}-{contract_count:04d}"
 
+        # Determine primary equipment and rate for legacy field compatibility
+        items = list(quotation.items.select_related('equipment').all())
+        primary_equipment = items[0].equipment if items else None
+        agreed_rate = items[0].rate_applied if items else Decimal('0.00')
+
         # Create Contract
         contract = RentalContract.objects.create(
             contract_no=contract_no,
             quotation=quotation,
             customer=quotation.customer,
             project_site=quotation.project_site,
-            equipment=quotation.equipment,
+            equipment=primary_equipment,
             contract_start_date=quotation.start_date,
             contract_end_date=quotation.end_date,
             billing_cycle=billing_cycle,
-            agreed_rate=quotation.rate_applied,
+            agreed_rate=agreed_rate,
             deposit_paid=quotation.security_deposit_required,
             status=RentalContract.Status.ACTIVE
         )
 
-        # Transition Equipment to RESERVED
-        equipment = quotation.equipment
-        equipment.transition_status(Equipment.Status.RESERVED, user=user, notes=f"Reserved for Contract {contract.contract_no}")
+        # Create RentalContractItem lines & transition all machinery to RESERVED
+        for item in items:
+            RentalContractItem.objects.create(
+                contract=contract,
+                equipment=item.equipment,
+                start_date=item.item_start_date or quotation.start_date,
+                end_date=item.item_end_date or quotation.end_date,
+                rate_applied=item.rate_applied,
+                rate_type=item.rate_type,
+                subtotal_amount=item.subtotal_amount,
+            )
+            item.equipment.transition_status(
+                Equipment.Status.RESERVED,
+                user=user,
+                notes=f"Reserved for Contract {contract.contract_no}"
+            )
 
         # Mark Quotation as CONVERTED
         quotation.status = Quotation.Status.CONVERTED
@@ -219,13 +267,22 @@ def process_equipment_dispatch(contract_id: str, dispatch_data: Dict[str, Any], 
     Executes machine mobilization handover.
     
     Step 4.2 State Machine Workflow:
-    1. Creates DispatchReturn record with opening hour-meter, fuel level, checklist.
+    1. Creates DispatchReturn record with opening hour-meter, fuel level, checklist for the asset.
     2. Transitions Equipment.status -> ON_RENT.
     3. Transitions RentalContract.status -> ON_RENT.
     """
     with transaction.atomic():
         contract = RentalContract.objects.select_for_update().get(contract_no=contract_id)
-        equipment = contract.equipment
+        
+        # Support specifying specific equipment or defaulting to contract primary asset
+        equipment = dispatch_data.get('equipment')
+        if not equipment and 'equipment_id' in dispatch_data:
+            equipment = Equipment.objects.get(asset_code=dispatch_data['equipment_id'])
+        if not equipment:
+            equipment = contract.equipment or (contract.items.first().equipment if contract.items.exists() else None)
+
+        if not equipment:
+            raise ValidationError(f"No equipment asset found on Contract '{contract.contract_no}' for dispatch.")
 
         current_year = timezone.now().year
         trx_count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1

@@ -318,13 +318,6 @@ class Quotation(TimeStampedModel):
         verbose_name=_("Project Site"),
         help_text=_("Designated construction site for equipment delivery.")
     )
-    equipment = models.ForeignKey(
-        'fleet.Equipment',
-        on_delete=models.PROTECT,
-        related_name='quotations',
-        verbose_name=_("Equipment Asset"),
-        help_text=_("Machinery asset requested for rental.")
-    )
     start_date = models.DateField(
         _("Rental Start Date"),
         help_text=_("Commencement date of prospective rental.")
@@ -333,18 +326,12 @@ class Quotation(TimeStampedModel):
         _("Rental End Date"),
         help_text=_("Estimated completion/return date of rental.")
     )
-    rate_applied = models.DecimalField(
-        _("Applied Rate (LKR)"),
-        max_digits=10,
-        decimal_places=2,
-        help_text=_("Unit rental rate agreed for this quotation.")
-    )
     rate_type = models.CharField(
-        _("Rate Type"),
+        _("Default Rate Type"),
         max_length=20,
         choices=RateType.choices,
         default=RateType.DAILY,
-        help_text=_("Rate frequency tier (Daily, Weekly, Monthly).")
+        help_text=_("Default rate frequency tier (Daily, Weekly, Monthly).")
     )
     estimated_transport_cost = models.DecimalField(
         _("Estimated Transport Cost (LKR)"),
@@ -371,7 +358,8 @@ class Quotation(TimeStampedModel):
         _("Subtotal Amount (LKR)"),
         max_digits=12,
         decimal_places=2,
-        help_text=_("Base rental charge before tax and transport.")
+        default=Decimal('0.00'),
+        help_text=_("Base rental charge before tax and transport (Sum of Line Items).")
     )
     total_tax_amount = models.DecimalField(
         _("Total Tax Amount (LKR)"),
@@ -384,6 +372,7 @@ class Quotation(TimeStampedModel):
         _("Grand Total Amount (LKR)"),
         max_digits=12,
         decimal_places=2,
+        default=Decimal('0.00'),
         help_text=_("Total quotation value including rental, transport, and taxes.")
     )
     status = models.CharField(
@@ -421,7 +410,7 @@ class Quotation(TimeStampedModel):
     @property
     def duration_days(self) -> int:
         """Calculates total rental calendar days inclusive of start and end dates."""
-        if self.start_date and self.end_date:
+        if self.start_date and self.end_date and self.end_date >= self.start_date:
             return max(1, (self.end_date - self.start_date).days + 1)
         return 1
 
@@ -433,24 +422,42 @@ class Quotation(TimeStampedModel):
     @property
     def discount_amount(self) -> Decimal:
         """Calculates commercial discount amount in LKR."""
-        base = self.subtotal_amount if self.subtotal_amount is not None else (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00')))
+        base = self.subtotal_amount if self.subtotal_amount is not None else Decimal('0.00')
         return ((base * (self.discount_percentage or Decimal('0.00'))) / Decimal('100.00')).quantize(Decimal('0.01'))
+
+    @property
+    def taxable_base_amount(self) -> Decimal:
+        """Taxable Base = (Base Tariff - Discount Amount) + Estimated Transport Cost."""
+        base = self.subtotal_amount or Decimal('0.00')
+        discount = self.discount_amount
+        transport = self.estimated_transport_cost or Decimal('0.00')
+        return max(Decimal('0.00'), (base - discount) + transport)
+
+    @property
+    def primary_equipment(self):
+        """Helper to return the first equipment asset associated with this quotation."""
+        first_item = self.items.select_related('equipment').first()
+        return first_item.equipment if first_item else None
 
     def calculate_totals(self) -> dict:
         """
         Calculates quote figures:
-        - Base Tariff (subtotal_amount)
+        - Base Tariff (subtotal_amount = Sum of line item subtotals)
         - Discount Amount
         - Transport
         - VAT (total_tax_amount)
         - Grand Total: (Base Tariff + Transport + VAT) - Discount
         """
-        days = Decimal(self.duration_days)
-        rate = self.rate_applied or Decimal('0.00')
         transport = self.estimated_transport_cost or Decimal('0.00')
         discount_pct = self.discount_percentage or Decimal('0.00')
 
-        base_tariff = self.subtotal_amount if self.subtotal_amount is not None else (days * rate)
+        if self.pk and self.items.exists():
+            base_tariff = sum((item.subtotal_amount for item in self.items.all()), Decimal('0.00'))
+        elif self.subtotal_amount is not None:
+            base_tariff = self.subtotal_amount
+        else:
+            base_tariff = Decimal('0.00')
+
         discount_amt = (base_tariff * discount_pct) / Decimal('100.00')
 
         if self.total_tax_amount is not None and self.total_tax_amount > Decimal('0.00'):
@@ -459,7 +466,7 @@ class Quotation(TimeStampedModel):
             taxable = max(Decimal('0.00'), (base_tariff - discount_amt) + transport)
             tax_amt = (taxable * Decimal('0.18')).quantize(Decimal('0.01'))
 
-        # Formula: (Base Tariff + Transport + VAT) - Discount
+        # Formula: (Base Tariff + Transport + VAT) - Discount = Taxable Base + VAT
         grand_total = (base_tariff + transport + tax_amt) - discount_amt
 
         return {
@@ -521,10 +528,13 @@ class Quotation(TimeStampedModel):
         if not self.quotation_no:
             self.quotation_no = self.generate_quotation_no(existing_pk=self.pk)
 
-        if self.subtotal_amount is None and self.rate_applied is not None:
-            self.subtotal_amount = Decimal(self.duration_days) * self.rate_applied
+        if self.subtotal_amount is None:
+            if self.pk and self.items.exists():
+                self.subtotal_amount = sum((item.subtotal_amount for item in self.items.all()), Decimal('0.00'))
+            else:
+                self.subtotal_amount = Decimal('0.00')
 
-        base_tariff = self.subtotal_amount or (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00')))
+        base_tariff = self.subtotal_amount or Decimal('0.00')
         discount_amt = (base_tariff * (self.discount_percentage or Decimal('0.00'))) / Decimal('100.00')
         transport = self.estimated_transport_cost or Decimal('0.00')
 
@@ -549,6 +559,96 @@ class Quotation(TimeStampedModel):
             self.Status.ACCEPTED,
             self.Status.CONVERTED,
         ]
+
+
+class QuotationItem(TimeStampedModel):
+    """
+    Quotation Line Item Model representing individual machinery assets,
+    rental durations, and applied tariffs within a parent Quotation.
+    """
+    quotation = models.ForeignKey(
+        Quotation,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name=_("Quotation"),
+        help_text=_("Parent commercial quotation.")
+    )
+    equipment = models.ForeignKey(
+        'fleet.Equipment',
+        on_delete=models.PROTECT,
+        related_name='quotation_items',
+        verbose_name=_("Equipment Asset"),
+        help_text=_("Machinery asset requested for rental.")
+    )
+    start_date = models.DateField(
+        _("Rental Start Date"),
+        null=True,
+        blank=True,
+        help_text=_("Item-specific rental start date (defaults to quotation start date if empty).")
+    )
+    end_date = models.DateField(
+        _("Rental End Date"),
+        null=True,
+        blank=True,
+        help_text=_("Item-specific rental completion date (defaults to quotation end date if empty).")
+    )
+    rate_type = models.CharField(
+        _("Rate Type"),
+        max_length=20,
+        choices=Quotation.RateType.choices,
+        default=Quotation.RateType.DAILY,
+        help_text=_("Rate frequency tier (Daily, Weekly, Monthly).")
+    )
+    rate_applied = models.DecimalField(
+        _("Applied Rate (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Agreed unit rental rate for this equipment item.")
+    )
+    subtotal_amount = models.DecimalField(
+        _("Line Subtotal (LKR)"),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Calculated line item base tariff (Duration x Applied Rate).")
+    )
+
+    class Meta:
+        verbose_name = _("Quotation Item")
+        verbose_name_plural = _("Quotation Items")
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.quotation.quotation_no} - {self.equipment.asset_code} ({self.equipment.equipment_name})"
+
+    @property
+    def item_start_date(self):
+        return self.start_date or (self.quotation.start_date if self.quotation_id else None)
+
+    @property
+    def item_end_date(self):
+        return self.end_date or (self.quotation.end_date if self.quotation_id else None)
+
+    @property
+    def duration_days(self) -> int:
+        s = self.item_start_date
+        e = self.item_end_date
+        if s and e and e >= s:
+            return max(1, (e - s).days + 1)
+        return 1
+
+    def calculate_subtotal(self) -> Decimal:
+        return (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00'))).quantize(Decimal('0.01'))
+
+    def save(self, *args, **kwargs):
+        if not self.start_date and self.quotation_id and self.quotation.start_date:
+            self.start_date = self.quotation.start_date
+        if not self.end_date and self.quotation_id and self.quotation.end_date:
+            self.end_date = self.quotation.end_date
+        if self.subtotal_amount is None or self.subtotal_amount == Decimal('0.00'):
+            self.subtotal_amount = self.calculate_subtotal()
+        super().save(*args, **kwargs)
 
 
 class RentalContract(TimeStampedModel):
@@ -602,8 +702,10 @@ class RentalContract(TimeStampedModel):
         'fleet.Equipment',
         on_delete=models.PROTECT,
         related_name='contracts',
-        verbose_name=_("Equipment Asset"),
-        help_text=_("Machinery asset contracted for rental.")
+        null=True,
+        blank=True,
+        verbose_name=_("Primary Equipment Asset"),
+        help_text=_("Primary machinery asset contracted for rental (or access all assets via contract items).")
     )
     contract_start_date = models.DateField(
         _("Contract Start Date"),
@@ -624,6 +726,7 @@ class RentalContract(TimeStampedModel):
         _("Agreed Rate (LKR)"),
         max_digits=10,
         decimal_places=2,
+        default=Decimal('0.00'),
         help_text=_("Final agreed rental rate per period.")
     )
     deposit_paid = models.DecimalField(
@@ -655,7 +758,79 @@ class RentalContract(TimeStampedModel):
         ordering = ['-contract_start_date', '-created_at']
 
     def __str__(self):
-        return f"{self.contract_no} - {self.customer.company_name} ({self.equipment.asset_code})"
+        eq_name = self.equipment.asset_code if self.equipment else f"{self.items.count()} items"
+        return f"{self.contract_no} - {self.customer.company_name} ({eq_name})"
+
+
+class RentalContractItem(TimeStampedModel):
+    """
+    Contract Line Item Model representing individual equipment assets leased under a parent RentalContract.
+    """
+    contract = models.ForeignKey(
+        RentalContract,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name=_("Rental Contract"),
+        help_text=_("Parent rental contract.")
+    )
+    equipment = models.ForeignKey(
+        'fleet.Equipment',
+        on_delete=models.PROTECT,
+        related_name='contract_items',
+        verbose_name=_("Equipment Asset"),
+        help_text=_("Machinery asset contracted for rental.")
+    )
+    start_date = models.DateField(
+        _("Contract Start Date"),
+        help_text=_("Equipment rental start date.")
+    )
+    end_date = models.DateField(
+        _("Contract End Date"),
+        help_text=_("Equipment rental completion date.")
+    )
+    rate_applied = models.DecimalField(
+        _("Agreed Rate (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Agreed unit rental rate.")
+    )
+    rate_type = models.CharField(
+        _("Rate Type"),
+        max_length=20,
+        choices=Quotation.RateType.choices,
+        default=Quotation.RateType.DAILY,
+        help_text=_("Rate frequency tier.")
+    )
+    subtotal_amount = models.DecimalField(
+        _("Line Subtotal (LKR)"),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_("Line item total amount.")
+    )
+
+    class Meta:
+        verbose_name = _("Rental Contract Item")
+        verbose_name_plural = _("Rental Contract Items")
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.contract.contract_no} - {self.equipment.asset_code}"
+
+    @property
+    def duration_days(self) -> int:
+        if self.start_date and self.end_date and self.end_date >= self.start_date:
+            return max(1, (self.end_date - self.start_date).days + 1)
+        return 1
+
+    def calculate_subtotal(self) -> Decimal:
+        return (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00'))).quantize(Decimal('0.01'))
+
+    def save(self, *args, **kwargs):
+        if self.subtotal_amount is None or self.subtotal_amount == Decimal('0.00'):
+            self.subtotal_amount = self.calculate_subtotal()
+        super().save(*args, **kwargs)
 
 
 class DispatchReturn(TimeStampedModel):

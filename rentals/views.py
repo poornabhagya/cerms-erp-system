@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q, Sum, Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,8 +14,8 @@ from users.models import User
 from users.permissions import RoleRequiredMixin
 from fleet.models import Equipment, Category
 from .api import CalendarEventsAPIView, EquipmentAvailabilityCheckAPIView
-from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
-from .forms import CustomerForm, ProjectSiteForm, QuotationForm, RentalContractForm, DispatchForm, ReturnForm
+from .models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
+from .forms import CustomerForm, ProjectSiteForm, QuotationForm, QuotationItemForm, QuotationItemFormSet, RentalContractForm, DispatchForm, ReturnForm
 from .services import (
     validate_customer_credit_limit,
     convert_quotation_to_contract,
@@ -111,7 +112,7 @@ class CustomerDetailView(RoleRequiredMixin, DetailView):
         context['project_sites'] = customer.project_sites.all().order_by('-created_at')
 
         # Quotations & Contracts
-        context['recent_quotations'] = customer.quotations.select_related('equipment', 'project_site').order_by('-created_at')[:5]
+        context['recent_quotations'] = customer.quotations.select_related('project_site').prefetch_related('items__equipment').order_by('-created_at')[:5]
         context['active_contracts'] = customer.contracts.select_related('equipment', 'project_site').order_by('-contract_start_date')[:5]
 
         # Credit utilization percentage
@@ -371,7 +372,7 @@ class QuotationListView(RoleRequiredMixin, ListView):
     )
 
     def get_queryset(self):
-        queryset = Quotation.objects.select_related('customer', 'project_site', 'equipment', 'approved_by')
+        queryset = Quotation.objects.select_related('customer', 'project_site', 'approved_by').prefetch_related('items__equipment')
         search_query = self.request.GET.get('q', '').strip()
         status_filter = self.request.GET.get('status', '').strip()
 
@@ -379,9 +380,9 @@ class QuotationListView(RoleRequiredMixin, ListView):
             queryset = queryset.filter(
                 Q(quotation_no__icontains=search_query) |
                 Q(customer__company_name__icontains=search_query) |
-                Q(equipment__asset_code__icontains=search_query) |
-                Q(equipment__equipment_name__icontains=search_query)
-            )
+                Q(items__equipment__asset_code__icontains=search_query) |
+                Q(items__equipment__equipment_name__icontains=search_query)
+            ).distinct()
 
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -425,6 +426,9 @@ class QuotationDetailView(RoleRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         quotation = self.object
 
+        # Preloaded items
+        context['items'] = quotation.items.select_related('equipment', 'equipment__category').all()
+
         # Real-time credit validation check
         context['credit_check'] = validate_customer_credit_limit(quotation.customer, quotation.grand_total_amount)
         context['can_convert'] = (quotation.status in [Quotation.Status.ACCEPTED, Quotation.Status.APPROVED_BY_MANAGEMENT]) and not hasattr(quotation, 'contract')
@@ -434,7 +438,7 @@ class QuotationDetailView(RoleRequiredMixin, DetailView):
 
 
 class QuotationCreateView(RoleRequiredMixin, CreateView):
-    """View to build and issue a new commercial Quotation."""
+    """View to build and issue a new commercial Quotation with multi-asset line items."""
     model = Quotation
     form_class = QuotationForm
     template_name = 'rentals/quotation_form.html'
@@ -450,15 +454,6 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
         initial['start_date'] = self.request.GET.get('start_date') or timezone.now().date()
         if self.request.GET.get('end_date'):
             initial['end_date'] = self.request.GET.get('end_date')
-        if self.request.GET.get('equipment'):
-            try:
-                eq = Equipment.objects.get(asset_code=self.request.GET.get('equipment'))
-                initial['equipment'] = eq
-                rate_card = eq.rental_rates.filter(is_active=True).first()
-                if rate_card and rate_card.daily_rate:
-                    initial['rate_applied'] = rate_card.daily_rate
-            except Equipment.DoesNotExist:
-                pass
         if self.request.GET.get('customer'):
             try:
                 initial['customer'] = Customer.objects.get(customer_code=self.request.GET.get('customer'))
@@ -469,16 +464,54 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['is_edit'] = False
+        if self.request.POST:
+            context['item_formset'] = QuotationItemFormSet(self.request.POST)
+        else:
+            initial_items = []
+            if self.request.GET.get('equipment'):
+                try:
+                    eq = Equipment.objects.get(asset_code=self.request.GET.get('equipment'))
+                    rate_card = eq.rental_rates.filter(is_active=True).first()
+                    initial_items.append({
+                        'equipment': eq,
+                        'start_date': self.request.GET.get('start_date') or timezone.now().date(),
+                        'end_date': self.request.GET.get('end_date') or None,
+                        'rate_applied': rate_card.daily_rate if rate_card else Decimal('0.00'),
+                        'rate_type': Quotation.RateType.DAILY,
+                    })
+                except Equipment.DoesNotExist:
+                    pass
+            if initial_items:
+                context['item_formset'] = QuotationItemFormSet(initial=initial_items)
+            else:
+                context['item_formset'] = QuotationItemFormSet()
         return context
 
     def form_valid(self, form):
-        self.object = form.save()
-        messages.success(self.request, f"Quotation '{self.object.quotation_no}' generated successfully.")
-        return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+        context = self.get_context_data()
+        item_formset = context['item_formset']
+        if item_formset.is_valid():
+            with transaction.atomic():
+                self.object = form.save(commit=False)
+                self.object.save()
+                item_formset.instance = self.object
+                item_formset.save()
+
+                # Re-calculate totals based on saved items
+                totals = self.object.calculate_totals()
+                self.object.subtotal_amount = totals['base_tariff']
+                self.object.total_tax_amount = totals['tax_amount']
+                self.object.grand_total_amount = totals['grand_total_amount']
+                self.object.save(update_fields=['subtotal_amount', 'total_tax_amount', 'grand_total_amount', 'updated_at'])
+
+            messages.success(self.request, f"Quotation '{self.object.quotation_no}' generated successfully.")
+            return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+        else:
+            return self.render_to_response(self.get_context_data(form=form))
 
 
 class QuotationUpdateView(RoleRequiredMixin, UpdateView):
-    """View to modify an existing Quotation."""
+    """View to modify an existing Quotation and its multi-asset line items."""
     model = Quotation
     form_class = QuotationForm
     template_name = 'rentals/quotation_form.html'
@@ -492,12 +525,33 @@ class QuotationUpdateView(RoleRequiredMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['is_edit'] = True
+        if self.request.POST:
+            context['item_formset'] = QuotationItemFormSet(self.request.POST, instance=self.object)
+        else:
+            context['item_formset'] = QuotationItemFormSet(instance=self.object)
         return context
 
     def form_valid(self, form):
-        self.object = form.save()
-        messages.success(self.request, f"Quotation '{self.object.quotation_no}' updated successfully.")
-        return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+        context = self.get_context_data()
+        item_formset = context['item_formset']
+        if item_formset.is_valid():
+            with transaction.atomic():
+                self.object = form.save(commit=False)
+                self.object.save()
+                item_formset.instance = self.object
+                item_formset.save()
+
+                # Re-calculate totals based on saved items
+                totals = self.object.calculate_totals()
+                self.object.subtotal_amount = totals['base_tariff']
+                self.object.total_tax_amount = totals['tax_amount']
+                self.object.grand_total_amount = totals['grand_total_amount']
+                self.object.save(update_fields=['subtotal_amount', 'total_tax_amount', 'grand_total_amount', 'updated_at'])
+
+            messages.success(self.request, f"Quotation '{self.object.quotation_no}' updated successfully.")
+            return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
+        else:
+            return self.render_to_response(self.get_context_data(form=form))
 
 
 class QuotationStatusTransitionView(RoleRequiredMixin, View):

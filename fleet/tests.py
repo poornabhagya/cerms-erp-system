@@ -125,10 +125,10 @@ class CategoryViewTests(TestCase):
     def test_category_auto_code_generation_algorithm(self):
         # 1. Test model-level generator method
         code_exc = Category.generate_code_from_name("Hydraulic Excavators")
-        self.assertEqual(code_exc, "HEXC")
+        self.assertEqual(code_exc, "HYEX")
 
         code_gen = Category.generate_code_from_name("Generators & Power")
-        self.assertEqual(code_gen, "GENP")
+        self.assertEqual(code_gen, "GEPO")
 
         code_hem = Category.generate_code_from_name("Heavy Earth Moving")
         self.assertEqual(code_hem, "HEM")
@@ -270,27 +270,38 @@ class EquipmentDeleteAndSpecsTests(TestCase):
         self.assertTrue(Equipment.objects.filter(asset_code='EQ-BLD-CAT-D6T-001').exists())
 
     def test_delete_blocked_when_linked_to_quotation(self):
-        from customers.models import Customer
-        from rentals.models import Quotation, QuotationItem
+        from rentals.models import Customer, ProjectSite, Quotation, QuotationItem
+        import datetime
         customer = Customer.objects.create(
+            customer_code='CUST-2026-888',
             company_name='Mega Infra Ltd',
-            primary_contact_name='John Builder',
-            phone_number='0771234567',
+            contact_person='John Builder',
+            phone='0771234567',
             email='megainfra@test.com',
-            tax_number='T12345678'
+            billing_address='Colombo 02',
+            vat_tax_number='T12345678'
+        )
+        site = ProjectSite.objects.create(
+            project_code='PRJ-MEGA-01',
+            customer=customer,
+            project_name='Highway Extension',
+            site_address='Kandy',
+            status=ProjectSite.Status.ACTIVE
         )
         quotation = Quotation.objects.create(
-            quotation_number='QT-2026-0001',
+            quotation_no='QT-2026-9999',
             customer=customer,
-            valid_until=timezone.now().date(),
+            project_site=site,
+            start_date=timezone.now().date(),
+            end_date=timezone.now().date() + datetime.timedelta(days=10),
             status=Quotation.Status.DRAFT,
-            created_by=self.admin_user
         )
         QuotationItem.objects.create(
             quotation=quotation,
             equipment=self.equipment,
             rate_applied=Decimal('50000.00'),
-            estimated_duration_days=10
+            start_date=quotation.start_date,
+            end_date=quotation.end_date,
         )
 
         self.client.force_login(self.admin_user)

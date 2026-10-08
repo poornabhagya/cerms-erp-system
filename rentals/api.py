@@ -53,67 +53,103 @@ class CalendarEventsAPIView(LoginRequiredMixin, View):
         if not status_filter or status_filter in ['ALL', 'ON_RENT']:
             contract_qs = RentalContract.objects.select_related(
                 'equipment', 'equipment__category', 'customer', 'project_site'
-            ).filter(
+            ).prefetch_related('items__equipment__category').filter(
                 status__in=['ACTIVE', 'ON_RENT', 'DISPATCHED', 'PENDING_RETURN'],
                 contract_start_date__lte=end_date,
                 contract_end_date__gte=start_date
             )
 
-            if category_id:
-                contract_qs = contract_qs.filter(equipment__category_id=category_id)
-            if equipment_code:
-                contract_qs = contract_qs.filter(equipment__asset_code=equipment_code)
-
             for contract in contract_qs:
                 c_end = contract.contract_end_date + timedelta(days=1)
-                events.append({
-                    'id': f"contract-{contract.contract_no}",
-                    'title': f"[{contract.equipment.asset_code}] On Rent: {contract.contract_no} ({contract.customer.company_name})",
-                    'start': contract.contract_start_date.isoformat(),
-                    'end': c_end.isoformat(),
-                    'allDay': True,
-                    'backgroundColor': '#0d6efd',
-                    'borderColor': '#0b5ed7',
-                    'textColor': '#ffffff',
-                    'url': reverse('rentals:contract_detail', kwargs={'contract_no': contract.contract_no}),
-                    'extendedProps': {
-                        'type': 'ON_RENT',
-                        'type_display': 'On Rent (Contract)',
-                        'badge_class': 'bg-primary',
-                        'asset_code': contract.equipment.asset_code,
-                        'equipment_name': contract.equipment.equipment_name,
-                        'category': contract.equipment.category.name if contract.equipment.category else '',
-                        'customer_name': contract.customer.company_name,
-                        'project_site': contract.project_site.project_name,
-                        'contract_no': contract.contract_no,
-                        'start_date': contract.contract_start_date.strftime('%Y-%m-%d'),
-                        'end_date': contract.contract_end_date.strftime('%Y-%m-%d'),
-                        'status': contract.get_status_display(),
-                        'agreed_rate': float(contract.agreed_rate) if contract.agreed_rate else 0.0,
-                    }
-                })
+                items = list(contract.items.all())
+                if items:
+                    for c_item in items:
+                        if category_id and str(c_item.equipment.category_id) != str(category_id):
+                            continue
+                        if equipment_code and c_item.equipment.asset_code != equipment_code:
+                            continue
+                        events.append({
+                            'id': f"contract-{contract.contract_no}-{c_item.id}",
+                            'title': f"[{c_item.equipment.asset_code}] On Rent: {contract.contract_no} ({contract.customer.company_name})",
+                            'start': c_item.start_date.isoformat(),
+                            'end': (c_item.end_date + timedelta(days=1)).isoformat(),
+                            'allDay': True,
+                            'backgroundColor': '#0d6efd',
+                            'borderColor': '#0b5ed7',
+                            'textColor': '#ffffff',
+                            'url': reverse('rentals:contract_detail', kwargs={'contract_no': contract.contract_no}),
+                            'extendedProps': {
+                                'type': 'ON_RENT',
+                                'type_display': 'On Rent (Contract)',
+                                'badge_class': 'bg-primary',
+                                'asset_code': c_item.equipment.asset_code,
+                                'equipment_name': c_item.equipment.equipment_name,
+                                'category': c_item.equipment.category.name if c_item.equipment.category else '',
+                                'customer_name': contract.customer.company_name,
+                                'project_site': contract.project_site.project_name if contract.project_site else '',
+                                'contract_no': contract.contract_no,
+                                'start_date': c_item.start_date.strftime('%Y-%m-%d'),
+                                'end_date': c_item.end_date.strftime('%Y-%m-%d'),
+                                'status': contract.get_status_display(),
+                                'agreed_rate': float(c_item.rate_applied) if c_item.rate_applied else 0.0,
+                            }
+                        })
+                elif contract.equipment:
+                    if category_id and str(contract.equipment.category_id) != str(category_id):
+                        continue
+                    if equipment_code and contract.equipment.asset_code != equipment_code:
+                        continue
+                    events.append({
+                        'id': f"contract-{contract.contract_no}",
+                        'title': f"[{contract.equipment.asset_code}] On Rent: {contract.contract_no} ({contract.customer.company_name})",
+                        'start': contract.contract_start_date.isoformat(),
+                        'end': c_end.isoformat(),
+                        'allDay': True,
+                        'backgroundColor': '#0d6efd',
+                        'borderColor': '#0b5ed7',
+                        'textColor': '#ffffff',
+                        'url': reverse('rentals:contract_detail', kwargs={'contract_no': contract.contract_no}),
+                        'extendedProps': {
+                            'type': 'ON_RENT',
+                            'type_display': 'On Rent (Contract)',
+                            'badge_class': 'bg-primary',
+                            'asset_code': contract.equipment.asset_code,
+                            'equipment_name': contract.equipment.equipment_name,
+                            'category': contract.equipment.category.name if contract.equipment.category else '',
+                            'customer_name': contract.customer.company_name,
+                            'project_site': contract.project_site.project_name if contract.project_site else '',
+                            'contract_no': contract.contract_no,
+                            'start_date': contract.contract_start_date.strftime('%Y-%m-%d'),
+                            'end_date': contract.contract_end_date.strftime('%Y-%m-%d'),
+                            'status': contract.get_status_display(),
+                            'agreed_rate': float(contract.agreed_rate) if contract.agreed_rate else 0.0,
+                        }
+                    })
 
         # 2. Reserved (Approved / Accepted Quotations) — Yellow (#ffc107)
         if not status_filter or status_filter in ['ALL', 'RESERVED']:
-            quote_qs = Quotation.objects.select_related(
-                'equipment', 'equipment__category', 'customer', 'project_site'
+            from rentals.models import QuotationItem
+            item_qs = QuotationItem.objects.select_related(
+                'quotation', 'quotation__customer', 'quotation__project_site', 'equipment', 'equipment__category'
             ).filter(
-                status__in=['APPROVED_BY_MANAGEMENT', 'SENT_TO_CUSTOMER', 'ACCEPTED'],
+                quotation__status__in=['APPROVED_BY_MANAGEMENT', 'SENT_TO_CUSTOMER', 'ACCEPTED'],
+                quotation__contract__isnull=True,
                 start_date__lte=end_date,
                 end_date__gte=start_date
-            ).filter(contract__isnull=True)
+            )
 
             if category_id:
-                quote_qs = quote_qs.filter(equipment__category_id=category_id)
+                item_qs = item_qs.filter(equipment__category_id=category_id)
             if equipment_code:
-                quote_qs = quote_qs.filter(equipment__asset_code=equipment_code)
+                item_qs = item_qs.filter(equipment__asset_code=equipment_code)
 
-            for quote in quote_qs:
-                q_end = quote.end_date + timedelta(days=1)
+            for item in item_qs:
+                quote = item.quotation
+                q_end = item.end_date + timedelta(days=1)
                 events.append({
-                    'id': f"quote-{quote.quotation_no}",
-                    'title': f"[{quote.equipment.asset_code}] Reserved: {quote.quotation_no} ({quote.customer.company_name})",
-                    'start': quote.start_date.isoformat(),
+                    'id': f"quote-{quote.quotation_no}-{item.id}",
+                    'title': f"[{item.equipment.asset_code}] Reserved: {quote.quotation_no} ({quote.customer.company_name})",
+                    'start': item.start_date.isoformat(),
                     'end': q_end.isoformat(),
                     'allDay': True,
                     'backgroundColor': '#ffc107',
@@ -124,16 +160,16 @@ class CalendarEventsAPIView(LoginRequiredMixin, View):
                         'type': 'RESERVED',
                         'type_display': 'Reserved (Quotation)',
                         'badge_class': 'bg-warning text-dark',
-                        'asset_code': quote.equipment.asset_code,
-                        'equipment_name': quote.equipment.equipment_name,
-                        'category': quote.equipment.category.name if quote.equipment.category else '',
+                        'asset_code': item.equipment.asset_code,
+                        'equipment_name': item.equipment.equipment_name,
+                        'category': item.equipment.category.name if item.equipment.category else '',
                         'customer_name': quote.customer.company_name,
-                        'project_site': quote.project_site.project_name,
+                        'project_site': quote.project_site.project_name if quote.project_site else '',
                         'quotation_no': quote.quotation_no,
-                        'start_date': quote.start_date.strftime('%Y-%m-%d'),
-                        'end_date': quote.end_date.strftime('%Y-%m-%d'),
+                        'start_date': item.start_date.strftime('%Y-%m-%d'),
+                        'end_date': item.end_date.strftime('%Y-%m-%d'),
                         'status': quote.get_status_display(),
-                        'daily_rate': float(quote.rate_applied) if quote.rate_applied else 0.0,
+                        'daily_rate': float(item.rate_applied) if item.rate_applied else 0.0,
                     }
                 })
 

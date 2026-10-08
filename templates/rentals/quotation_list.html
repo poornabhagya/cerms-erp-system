@@ -127,17 +127,28 @@
                         <td>
                             <div>{{ q.project_site.project_name }}</div>
                             <small class="text-muted">{{ q.project_site.site_address|truncatechars:25 }}</small>
-                        </td>
                         <td>
-                            <div class="fw-semibold">{{ q.equipment.equipment_name }}</div>
-                            <small class="text-muted font-monospace">{{ q.equipment.asset_code }}</small>
+                            {% with items=q.items.all %}
+                                {% if items %}
+                                    {% for item in items|slice:":2" %}
+                                        <div class="fw-semibold text-truncate" style="max-width: 200px;">{{ item.equipment.equipment_name }}</div>
+                                        <small class="text-muted font-monospace me-1">{{ item.equipment.asset_code }}</small>
+                                    {% endfor %}
+                                    {% if items.count > 2 %}
+                                        <span class="badge bg-secondary">+{{ items.count|add:"-2" }} more</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted small">No items</span>
+                                {% endif %}
+                            {% endwith %}
                         </td>
                         <td>
                             <div><i class="bi bi-calendar3 me-1 text-muted"></i>{{ q.start_date|date:"Y-m-d" }}</div>
                             <small class="text-muted">to {{ q.end_date|date:"Y-m-d" }} ({{ q.rental_duration_days }} days)</small>
                         </td>
                         <td>
-                            <span class="badge bg-light text-dark border">Rs. {{ q.rate_applied|floatformat:2 }} / {{ q.get_rate_type_display }}</span>
+                            <span class="badge bg-light text-dark border">{{ q.items.count }} Asset Item(s)</span>
+                            <small class="d-block text-muted">{{ q.get_rate_type_display }} Billing</small>
                         </td>
                         <td class="text-end fw-bold text-dark font-monospace">
                             Rs. {{ q.grand_total_amount|floatformat:2 }}

@@ -346,8 +346,8 @@ class EquipmentDeleteView(RoleRequiredMixin, View):
         Quotation = apps.get_model('rentals', 'Quotation', require_ready=False)
         DispatchReturn = apps.get_model('rentals', 'DispatchReturn', require_ready=False)
 
-        has_contracts = RentalContract.objects.filter(equipment=equipment).exists() if RentalContract else False
-        has_quotations = Quotation.objects.filter(equipment=equipment).exists() if Quotation else False
+        has_contracts = RentalContract.objects.filter(Q(equipment=equipment) | Q(items__equipment=equipment)).exists() if RentalContract else False
+        has_quotations = Quotation.objects.filter(items__equipment=equipment).exists() if Quotation else False
         has_dispatches = DispatchReturn.objects.filter(equipment=equipment).exists() if DispatchReturn else False
 
         if has_contracts or has_quotations or has_dispatches:

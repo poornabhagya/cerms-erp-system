@@ -35,13 +35,16 @@ class EquipmentQuerySet(models.QuerySet):
             qs = qs.filter(category_id=category_id)
 
         if start_date and end_date:
-            conflicting_contracts = RentalContract.objects.filter(
+            active_contracts = RentalContract.objects.filter(
                 status__in=['ACTIVE', 'ON_RENT', 'DISPATCHED'],
                 contract_start_date__lte=end_date,
                 contract_end_date__gte=start_date
-            ).values_list('equipment_id', flat=True)
+            )
+            conflicting_direct = list(active_contracts.exclude(equipment__isnull=True).values_list('equipment_id', flat=True))
+            conflicting_items = list(active_contracts.values_list('items__equipment_id', flat=True))
+            conflicting_assets = set(filter(None, conflicting_direct + conflicting_items))
 
-            qs = qs.exclude(asset_code__in=conflicting_contracts)
+            qs = qs.exclude(asset_code__in=conflicting_assets)
 
         return qs
 
@@ -66,12 +69,15 @@ def get_available_equipment(category_id=None, start_date=None, end_date=None):
         qs = qs.filter(category_id=category_id)
 
     if start_date and end_date:
-        conflicting_contracts = RentalContract.objects.filter(
+        active_contracts = RentalContract.objects.filter(
             status__in=['ACTIVE', 'ON_RENT', 'DISPATCHED'],
             contract_start_date__lte=end_date,
             contract_end_date__gte=start_date
-        ).values_list('equipment_id', flat=True)
+        )
+        conflicting_direct = list(active_contracts.exclude(equipment__isnull=True).values_list('equipment_id', flat=True))
+        conflicting_items = list(active_contracts.values_list('items__equipment_id', flat=True))
+        conflicting_assets = set(filter(None, conflicting_direct + conflicting_items))
 
-        return qs.exclude(asset_code__in=conflicting_contracts)
+        return qs.exclude(asset_code__in=conflicting_assets)
 
     return qs

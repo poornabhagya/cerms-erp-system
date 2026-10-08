@@ -1,12 +1,13 @@
 from decimal import Decimal
 from django import forms
+from django.forms import inlineformset_factory
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Row, Column, Submit, HTML, Div, Field
 
 from fleet.models import Equipment
-from .models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
+from .models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
 
 
 class CustomerForm(forms.ModelForm):
@@ -182,7 +183,8 @@ class ProjectSiteForm(forms.ModelForm):
 
 class QuotationForm(forms.ModelForm):
     """
-    Form for building commercial quotations with dynamic pricing, transport, discount, and tax calculations.
+    Form for building commercial quotations with dynamic multi-asset pricing,
+    transport, discount, and statutory tax calculations.
     """
     quotation_no = forms.CharField(
         label=_("Quotation Number"),
@@ -196,19 +198,20 @@ class QuotationForm(forms.ModelForm):
         help_text=_("System auto-generated identifier (QT-YYYY-XXXX).")
     )
     subtotal_amount = forms.DecimalField(
-        label=_("Subtotal Amount (LKR)"),
+        label=_("Base Tariff / Subtotal Amount (LKR)"),
         required=False,
-        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_subtotal'}),
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_subtotal', 'class': 'form-control bg-light font-monospace fw-bold', 'readonly': 'readonly'}),
+        help_text=_("Sum of all equipment line item subtotals.")
     )
     total_tax_amount = forms.DecimalField(
-        label=_("Total Tax Amount (LKR)"),
+        label=_("Total Tax Amount (18% VAT) (LKR)"),
         required=False,
-        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_tax_amount'}),
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_tax_amount', 'class': 'form-control bg-light font-monospace', 'readonly': 'readonly'}),
     )
     grand_total_amount = forms.DecimalField(
         label=_("Grand Total Amount (LKR)"),
         required=False,
-        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_grand_total'}),
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_grand_total', 'class': 'form-control bg-light font-monospace fw-bold fs-5 text-success', 'readonly': 'readonly'}),
     )
 
     class Meta:
@@ -217,11 +220,9 @@ class QuotationForm(forms.ModelForm):
             'quotation_no',
             'customer',
             'project_site',
-            'equipment',
             'start_date',
             'end_date',
             'rate_type',
-            'rate_applied',
             'estimated_transport_cost',
             'security_deposit_required',
             'discount_percentage',
@@ -233,13 +234,11 @@ class QuotationForm(forms.ModelForm):
         widgets = {
             'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_start_date'}),
             'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_end_date'}),
-            'rate_applied': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_rate_applied'}),
+            'rate_type': forms.Select(attrs={'class': 'form-select', 'id': 'id_rate_type'}),
             'estimated_transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_transport_cost'}),
             'security_deposit_required': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_deposit_required'}),
             'discount_percentage': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '100', 'id': 'id_discount_pct'}),
-            'subtotal_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_subtotal'}),
-            'total_tax_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_tax_amount'}),
-            'grand_total_amount': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_grand_total'}),
+            'status': forms.Select(attrs={'class': 'form-select', 'id': 'id_status'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -264,25 +263,23 @@ class QuotationForm(forms.ModelForm):
                     Column('project_site', css_class='col-12 col-md-4 mb-3'),
                 ),
                 Row(
-                    Column('equipment', css_class='col-12 col-md-4 mb-3'),
                     Column('start_date', css_class='col-12 col-md-4 mb-3'),
                     Column('end_date', css_class='col-12 col-md-4 mb-3'),
+                    Column('rate_type', css_class='col-12 col-md-4 mb-3'),
                 ),
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             ),
             Div(
                 HTML('<h5 class="fw-bold mb-3 text-dark"><i class="bi bi-cash-stack me-2 text-success"></i> Commercial Pricing & Deposit Terms</h5>'),
                 Row(
-                    Column('rate_type', css_class='col-12 col-md-3 mb-3'),
-                    Column('rate_applied', css_class='col-12 col-md-3 mb-3'),
-                    Column('estimated_transport_cost', css_class='col-12 col-md-3 mb-3'),
-                    Column('security_deposit_required', css_class='col-12 col-md-3 mb-3'),
+                    Column('estimated_transport_cost', css_class='col-12 col-md-4 mb-3'),
+                    Column('security_deposit_required', css_class='col-12 col-md-4 mb-3'),
+                    Column('discount_percentage', css_class='col-12 col-md-4 mb-3'),
                 ),
                 Row(
-                    Column('discount_percentage', css_class='col-12 col-md-3 mb-3'),
-                    Column('subtotal_amount', css_class='col-12 col-md-3 mb-3'),
-                    Column('total_tax_amount', css_class='col-12 col-md-3 mb-3'),
-                    Column('grand_total_amount', css_class='col-12 col-md-3 mb-3'),
+                    Column('subtotal_amount', css_class='col-12 col-md-4 mb-3'),
+                    Column('total_tax_amount', css_class='col-12 col-md-4 mb-3'),
+                    Column('grand_total_amount', css_class='col-12 col-md-4 mb-3'),
                 ),
                 Row(
                     Column('status', css_class='col-12 col-md-6 mb-3'),
@@ -301,7 +298,6 @@ class QuotationForm(forms.ModelForm):
         cleaned_data = super().clean()
         start_date = cleaned_data.get('start_date')
         end_date = cleaned_data.get('end_date')
-        rate_applied = cleaned_data.get('rate_applied') or Decimal('0.00')
         transport_cost = cleaned_data.get('estimated_transport_cost') or Decimal('0.00')
         discount_pct = cleaned_data.get('discount_percentage') or Decimal('0.00')
         subtotal = cleaned_data.get('subtotal_amount')
@@ -311,27 +307,78 @@ class QuotationForm(forms.ModelForm):
         totals = calculate_quotation_totals(
             start_date=start_date,
             end_date=end_date,
-            rate_applied=rate_applied,
             estimated_transport_cost=transport_cost,
             discount_percentage=discount_pct,
             subtotal_amount=subtotal,
             total_tax_amount=tax_amount,
         )
 
-        if subtotal is None:
-            cleaned_data['subtotal_amount'] = totals['subtotal_amount']
-        if tax_amount is None:
-            cleaned_data['total_tax_amount'] = totals['total_tax_amount']
-
-        # Enforce Grand Total = (Base Tariff + Transport + VAT) - Discount
-        base_val = cleaned_data.get('subtotal_amount') or totals['subtotal_amount']
-        tax_val = cleaned_data.get('total_tax_amount') or totals['total_tax_amount']
-        discount_val = (base_val * Decimal(str(discount_pct))) / Decimal('100.00')
-
-        correct_grand_total = (base_val + Decimal(str(transport_cost)) + tax_val) - discount_val
-        cleaned_data['grand_total_amount'] = correct_grand_total.quantize(Decimal('0.01'))
+        cleaned_data['subtotal_amount'] = totals['subtotal_amount']
+        cleaned_data['total_tax_amount'] = totals['total_tax_amount']
+        cleaned_data['grand_total_amount'] = totals['grand_total_amount']
 
         return cleaned_data
+
+
+class QuotationItemForm(forms.ModelForm):
+    """
+    Form for individual machinery line items within a Quotation.
+    """
+    subtotal_amount = forms.DecimalField(
+        label=_("Line Subtotal (LKR)"),
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'step': '0.01',
+            'min': '0',
+            'class': 'form-control item-subtotal bg-light font-monospace fw-semibold',
+            'placeholder': '0.00',
+        }),
+    )
+
+    class Meta:
+        model = QuotationItem
+        fields = [
+            'equipment',
+            'start_date',
+            'end_date',
+            'rate_type',
+            'rate_applied',
+            'subtotal_amount',
+        ]
+        widgets = {
+            'equipment': forms.Select(attrs={'class': 'form-select item-equipment'}),
+            'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control item-start-date'}),
+            'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control item-end-date'}),
+            'rate_type': forms.Select(attrs={'class': 'form-select item-rate-type'}),
+            'rate_applied': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'form-control item-rate', 'placeholder': '0.00'}),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        equipment = cleaned_data.get('equipment')
+        start_date = cleaned_data.get('start_date')
+        end_date = cleaned_data.get('end_date')
+        rate_applied = cleaned_data.get('rate_applied') or Decimal('0.00')
+
+        if equipment:
+            days = 1
+            if start_date and end_date and end_date >= start_date:
+                days = max(1, (end_date - start_date).days + 1)
+            calculated_subtotal = (Decimal(days) * Decimal(str(rate_applied))).quantize(Decimal('0.01'))
+            if not cleaned_data.get('subtotal_amount') or cleaned_data.get('subtotal_amount') == Decimal('0.00'):
+                cleaned_data['subtotal_amount'] = calculated_subtotal
+        return cleaned_data
+
+
+QuotationItemFormSet = inlineformset_factory(
+    Quotation,
+    QuotationItem,
+    form=QuotationItemForm,
+    extra=1,
+    can_delete=True,
+    min_num=1,
+    validate_min=False,
+)
 
 
 class RentalContractForm(forms.ModelForm):

@@ -17,9 +17,9 @@
     <div>
         <h3 class="fw-bold mb-1">
             <i class="bi bi-file-earmark-plus text-primary me-2"></i>
-            {% if is_edit %}Modify Quotation {{ form.instance.quotation_no }}{% else %}Dynamic Commercial Quote Builder{% endif %}
+            {% if is_edit %}Modify Quotation {{ form.instance.quotation_no }}{% else %}Multi-Item Commercial Quotation Builder{% endif %}
         </h3>
-        <p class="text-muted small mb-0">Configure rental timelines, commercial tariffs, transport logistics, and calculate statutory taxes.</p>
+        <p class="text-muted small mb-0">Configure multi-asset machinery packages, line item rates, transport logistics, and calculate statutory taxes.</p>
     </div>
     <div>
         <a href="{% url 'rentals:quotation_list' %}" class="btn btn-outline-secondary">
@@ -28,15 +28,204 @@
     </div>
 </div>
 
+{% if form.errors or item_formset.errors %}
+<div class="alert alert-danger shadow-sm border-0 mb-4">
+    <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i> Please correct the errors below:</div>
+    {{ form.errors }}
+    {{ item_formset.non_form_errors }}
+    {% for item_form in item_formset %}
+        {% if item_form.errors %}
+            <div class="small mt-1">Item {{ forloop.counter }}: {{ item_form.errors }}</div>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
+
 <form method="post" id="quotationForm">
     {% csrf_token %}
-    
-    {% crispy form %}
 
+    <!-- 1. Header Scope Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 border-bottom">
+            <h5 class="fw-bold mb-0 text-dark">
+                <i class="bi bi-file-earmark-text text-primary me-2"></i> 1. Quotation Scope & Scheduling
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Quotation Number</label>
+                    {{ form.quotation_no }}
+                    <small class="text-muted">{{ form.quotation_no.help_text }}</small>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
+                    {{ form.customer }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Project Site <span class="text-danger">*</span></label>
+                    {{ form.project_site }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Quotation Start Date <span class="text-danger">*</span></label>
+                    {{ form.start_date }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Quotation End Date <span class="text-danger">*</span></label>
+                    {{ form.end_date }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Default Rate Type</label>
+                    {{ form.rate_type }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Equipment Line Items Formset Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-truck text-success me-2"></i> 2. Equipment Asset Line Items
+                </h5>
+                <small class="text-muted">Add one or multiple machinery assets to this commercial quotation package.</small>
+            </div>
+            <button type="button" class="btn btn-outline-success btn-sm fw-semibold" id="add-item-btn">
+                <i class="bi bi-plus-circle me-1"></i> Add Equipment Asset
+            </button>
+        </div>
+        <div class="card-body p-0">
+            {{ item_formset.management_form }}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="items-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="min-width: 260px;" class="ps-3">Equipment Asset <span class="text-danger">*</span></th>
+                            <th style="min-width: 140px;">Start Date</th>
+                            <th style="min-width: 140px;">End Date</th>
+                            <th style="min-width: 120px;">Rate Type</th>
+                            <th style="min-width: 150px;">Rate Applied (LKR) <span class="text-danger">*</span></th>
+                            <th style="min-width: 150px;">Line Subtotal (LKR)</th>
+                            <th style="width: 60px;" class="text-center">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="items-tbody">
+                        {% for item_form in item_formset %}
+                        <tr class="item-row">
+                            <td class="ps-3">
+                                {{ item_form.id }}
+                                {{ item_form.equipment }}
+                                {% if item_form.equipment.errors %}
+                                    <div class="text-danger small">{{ item_form.equipment.errors }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {{ item_form.start_date }}
+                            </td>
+                            <td>
+                                {{ item_form.end_date }}
+                            </td>
+                            <td>
+                                {{ item_form.rate_type }}
+                            </td>
+                            <td>
+                                {{ item_form.rate_applied }}
+                            </td>
+                            <td>
+                                {{ item_form.subtotal_amount }}
+                            </td>
+                            <td class="text-center">
+                                {% if item_form.instance.pk %}
+                                    <div class="d-none">{{ item_form.DELETE }}</div>
+                                    <button type="button" class="btn btn-outline-danger btn-sm delete-row-btn" title="Remove Asset">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                {% else %}
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-new-row-btn" title="Remove Asset">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Template for Empty Formset Row -->
+    <table style="display: none;">
+        <tbody id="empty-form-row">
+            <tr class="item-row">
+                <td class="ps-3">
+                    {{ item_formset.empty_form.id }}
+                    {{ item_formset.empty_form.equipment }}
+                </td>
+                <td>{{ item_formset.empty_form.start_date }}</td>
+                <td>{{ item_formset.empty_form.end_date }}</td>
+                <td>{{ item_formset.empty_form.rate_type }}</td>
+                <td>{{ item_formset.empty_form.rate_applied }}</td>
+                <td>{{ item_formset.empty_form.subtotal_amount }}</td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-new-row-btn" title="Remove Asset">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 3. Commercial Pricing, Logistics & Grand Total Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 border-bottom">
+            <h5 class="fw-bold mb-0 text-dark">
+                <i class="bi bi-cash-stack text-primary me-2"></i> 3. Commercial Pricing & Statutory Taxes
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Estimated Transport Cost (LKR)</label>
+                    {{ form.estimated_transport_cost }}
+                    <small class="text-muted">Round-trip mobilization logistics</small>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Security Deposit Required (LKR)</label>
+                    {{ form.security_deposit_required }}
+                    <small class="text-muted">Refundable cash escrow guarantee</small>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Commercial Discount (%)</label>
+                    {{ form.discount_percentage }}
+                    <small class="text-muted">Applied directly against the Base Tariff</small>
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Base Tariff (Sum of Items)</label>
+                    {{ form.subtotal_amount }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Statutory Tax (18% VAT)</label>
+                    {{ form.total_tax_amount }}
+                </div>
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Grand Total Commercial Value</label>
+                    {{ form.grand_total_amount }}
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label fw-semibold">Lifecycle Status</label>
+                    {{ form.status }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Bar -->
     <div class="card border-0 shadow-sm bg-light p-3 mb-4">
         <div class="d-flex justify-content-between align-items-center">
             <div class="text-muted small">
-                <i class="bi bi-calculator me-1 text-primary"></i> Live Tariff Calculator: Calculations update automatically upon date or rate changes.
+                <i class="bi bi-calculator me-1 text-primary"></i> Multi-Item Engine: Subtotals, Transport, VAT (18%), and Grand Total calculate in real time.
             </div>
             <div class="d-flex gap-2">
                 <a href="{% url 'rentals:quotation_list' %}" class="btn btn-outline-secondary px-4">Cancel</a>
@@ -53,66 +242,166 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const startDateInput = document.getElementById('id_start_date');
-    const endDateInput = document.getElementById('id_end_date');
-    const rateInput = document.getElementById('id_rate_applied');
+    const parentStartInput = document.getElementById('id_start_date');
+    const parentEndInput = document.getElementById('id_end_date');
     const transportInput = document.getElementById('id_transport_cost');
     const discountInput = document.getElementById('id_discount_pct');
     const subtotalInput = document.getElementById('id_subtotal');
     const taxInput = document.getElementById('id_tax_amount');
     const grandTotalInput = document.getElementById('id_grand_total');
 
-    function calculateTotals() {
-        if (!startDateInput || !endDateInput || !rateInput) return;
+    const totalFormsInput = document.getElementById('id_items-TOTAL_FORMS');
+    const tbody = document.getElementById('items-tbody');
+    const addItemBtn = document.getElementById('add-item-btn');
+    const emptyFormTemplate = document.getElementById('empty-form-row').innerHTML;
 
-        let days = 1;
-        if (startDateInput.value && endDateInput.value) {
-            const start = new Date(startDateInput.value);
-            const end = new Date(endDateInput.value);
+    function getDays(startVal, endVal) {
+        if (!startVal) startVal = parentStartInput ? parentStartInput.value : '';
+        if (!endVal) endVal = parentEndInput ? parentEndInput.value : '';
+
+        if (startVal && endVal) {
+            const start = new Date(startVal);
+            const end = new Date(endVal);
             if (end >= start) {
                 const diffTime = Math.abs(end - start);
-                days = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+                return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
             }
         }
+        return 1;
+    }
 
-        const rate = parseFloat(rateInput.value) || 0;
-        const transport = parseFloat(transportInput.value) || 0;
-        const discountPct = parseFloat(discountInput.value) || 0;
+    function calculateRow(row) {
+        if (row.style.display === 'none') return 0;
 
-        const baseRental = days * rate;
-        const discountAmount = baseRental * (discountPct / 100);
-        
-        // Base Tariff
-        if (subtotalInput) {
-            subtotalInput.value = baseRental.toFixed(2);
+        const sInput = row.querySelector('.item-start-date');
+        const eInput = row.querySelector('.item-end-date');
+        const rateInput = row.querySelector('.item-rate');
+        const subInput = row.querySelector('.item-subtotal');
+
+        const startVal = sInput && sInput.value ? sInput.value : (parentStartInput ? parentStartInput.value : '');
+        const endVal = eInput && eInput.value ? eInput.value : (parentEndInput ? parentEndInput.value : '');
+        const days = getDays(startVal, endVal);
+
+        const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
+        const rowSubtotal = days * rate;
+
+        if (subInput) {
+            subInput.value = rowSubtotal.toFixed(2);
         }
-        
-        // Statutory 18% VAT Standard on (Base - Discount + Transport)
+        return rowSubtotal;
+    }
+
+    function calculateAllTotals() {
+        let totalBaseTariff = 0;
+        const rows = tbody.querySelectorAll('tr.item-row');
+
+        rows.forEach(function (row) {
+            const delCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            if (delCheckbox && delCheckbox.checked) {
+                return;
+            }
+            totalBaseTariff += calculateRow(row);
+        });
+
+        const transport = parseFloat(transportInput ? transportInput.value : 0) || 0;
+        const discountPct = parseFloat(discountInput ? discountInput.value : 0) || 0;
+
+        const discountAmount = totalBaseTariff * (discountPct / 100);
+
+        if (subtotalInput) {
+            subtotalInput.value = totalBaseTariff.toFixed(2);
+        }
+
+        // Taxable Base = (Base Tariff - Discount) + Transport
+        const taxableBase = Math.max(0, (totalBaseTariff - discountAmount) + transport);
         const vatRate = 0.18;
-        const taxable = Math.max(0, (baseRental - discountAmount) + transport);
-        const tax = taxable * vatRate;
+        const tax = taxableBase * vatRate;
+
         if (taxInput) {
             taxInput.value = tax.toFixed(2);
         }
 
-        // Grand Total = (Base Tariff + Transport + VAT) - Discount
-        const grandTotal = (baseRental + transport + tax) - discountAmount;
+        // Grand Total = Taxable Base + VAT
+        const grandTotal = taxableBase + tax;
         if (grandTotalInput) {
             grandTotalInput.value = grandTotal.toFixed(2);
         }
     }
 
-    [startDateInput, endDateInput, rateInput, transportInput, discountInput].forEach(function(elem) {
+    // Dynamic Row Addition
+    if (addItemBtn) {
+        addItemBtn.addEventListener('click', function () {
+            const currentFormCount = parseInt(totalFormsInput.value, 10);
+            const newRowHtml = emptyFormTemplate.replace(/__prefix__/g, currentFormCount);
+            
+            const tempWrapper = document.createElement('tbody');
+            tempWrapper.innerHTML = newRowHtml;
+            const newRow = tempWrapper.firstElementChild;
+
+            // Pre-fill default dates from header if set
+            const sInput = newRow.querySelector('.item-start-date');
+            const eInput = newRow.querySelector('.item-end-date');
+            if (sInput && parentStartInput && parentStartInput.value) {
+                sInput.value = parentStartInput.value;
+            }
+            if (eInput && parentEndInput && parentEndInput.value) {
+                eInput.value = parentEndInput.value;
+            }
+
+            tbody.appendChild(newRow);
+            totalFormsInput.value = currentFormCount + 1;
+            bindRowEvents(newRow);
+            calculateAllTotals();
+        });
+    }
+
+    function bindRowEvents(row) {
+        const inputs = row.querySelectorAll('input, select');
+        inputs.forEach(function (elem) {
+            elem.addEventListener('input', calculateAllTotals);
+            elem.addEventListener('change', calculateAllTotals);
+        });
+
+        const removeBtn = row.querySelector('.remove-new-row-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', function () {
+                row.remove();
+                calculateAllTotals();
+            });
+        }
+
+        const deleteBtn = row.querySelector('.delete-row-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', function () {
+                const delCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (delCheckbox) {
+                    delCheckbox.checked = true;
+                }
+                row.style.display = 'none';
+                calculateAllTotals();
+            });
+        }
+    }
+
+    // Bind all initial rows
+    tbody.querySelectorAll('tr.item-row').forEach(bindRowEvents);
+
+    // Bind global header inputs
+    [parentStartInput, parentEndInput, transportInput, discountInput].forEach(function (elem) {
         if (elem) {
-            elem.addEventListener('input', calculateTotals);
-            elem.addEventListener('change', calculateTotals);
+            elem.addEventListener('input', function () {
+                // Update empty child row dates if applicable
+                calculateAllTotals();
+            });
+            elem.addEventListener('change', function () {
+                calculateAllTotals();
+            });
         }
     });
 
-    // Auto-compute on initial page load if start, end and rate are present
-    if (startDateInput && endDateInput && rateInput && rateInput.value) {
-        calculateTotals();
-    }
+    // Initial calculation on page load
+    calculateAllTotals();
 });
 </script>
 {% endblock %}
+

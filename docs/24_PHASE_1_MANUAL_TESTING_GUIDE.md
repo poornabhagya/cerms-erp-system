@@ -238,23 +238,25 @@ Binds construction work locations and site contact supervisors to a specific cus
 ### Step 7: Commercial Quotation Creation & Multi-Tier Calculation Engine
 
 #### A. Feature Overview & Purpose
-Generates commercial hire proposals, verifies real-time machinery availability, validates customer credit limits, and calculates accurate taxes and discounts.
+Generates commercial hire proposals with multi-item equipment line items (Parent-Child Architecture), verifies real-time machinery availability across multiple assets, validates customer credit limits against the composite quote value, and calculates accurate line-item subtotals, statutory taxes, and discounts.
 
 #### B. Mathematical Formula & Pricing Engine Specification
-The CERMS pricing engine strictly adheres to the following business logic:
+The CERMS pricing engine strictly adheres to the following multi-item business logic:
 
-1. **Duration in Days ($D$):**
-   $$D = (\text{End Date} - \text{Start Date}) + 1$$
+1. **Duration in Days ($D_i$) per Line Item:**
+   $$D_i = (\text{End Date}_i - \text{Start Date}_i) + 1$$
    *(e.g., Nov 1 to Nov 10 = 10 full billable days)*
-2. **Base Tariff ($\text{Subtotal}$):**
-   $$\text{Base Tariff} = D \times \text{Daily Rate Applied}$$
-3. **Discount Amount:**
+2. **Line Item Subtotal ($\text{Subtotal}_i$):**
+   $$\text{Subtotal}_i = D_i \times \text{Rate Applied}_i$$
+3. **Quotation Base Tariff ($\text{Base Tariff}$):**
+   $$\text{Base Tariff} = \sum_{i=1}^{N} \text{Subtotal}_i$$
+4. **Commercial Discount Amount:**
    $$\text{Discount Amount} = \frac{\text{Base Tariff} \times \text{Discount Percentage}}{100}$$
-4. **Taxable Base Amount:**
+5. **Taxable Base Amount:**
    $$\text{Taxable Base} = (\text{Base Tariff} - \text{Discount Amount}) + \text{Estimated Transport Cost}$$
-5. **Statutory Tax Amount (18% VAT):**
+6. **Statutory Tax Amount (18% VAT):**
    $$\text{VAT (18\%)} = \text{Taxable Base} \times 0.18$$
-6. **Grand Total Amount:**
+7. **Grand Total Amount:**
    $$\text{Grand Total} = (\text{Base Tariff} + \text{Estimated Transport Cost} + \text{VAT}) - \text{Discount Amount}$$
 
 ---
@@ -262,18 +264,32 @@ The CERMS pricing engine strictly adheres to the following business logic:
 #### C. Step-by-Step UI Actions
 1. Log in as `rental_officer`.
 2. Navigate to **Rentals** > **Quotations** > **"+ New Quotation"** (`/rentals/quotations/create/`).
-3. Fill in the commercial quotation form:
+3. Fill in the commercial quotation header:
+   - **Quotation No:** Read-only auto-generated sequence (e.g., `QT-2026-0001`).
    - **Customer:** `Access Engineering PLC`
    - **Project Site:** `Central Expressway Section III - Interchange`
-   - **Equipment Asset:** `EQ-CAT-320-001 (Caterpillar 320D)`
-   - **Rental Start Date:** `2026-11-01`
-   - **Rental End Date:** `2026-11-10` *(10 billable days)*
-   - **Rate Applied (LKR):** `45,000.00`
+   - **Quotation Default Start Date:** `2026-11-01`
+   - **Quotation Default End Date:** `2026-11-10`
    - **Rate Type:** `DAILY`
-   - **Estimated Transport Cost (LKR):** `50,000.00` *(Round-trip low-bed mobilization)*
-   - **Security Deposit Required (LKR):** `150,000.00`
+   - **Estimated Transport Cost (LKR):** `75,000.00` *(Round-trip low-bed mobilization for multi-asset fleet)*
+   - **Security Deposit Required (LKR):** `250,000.00`
    - **Discount Percentage (%):** `5.00`
-4. Click **Create Quotation & Compute Totals**.
+4. Configure **Quotation Equipment Line Items**:
+   - **Line Item #1 (Default Row):**
+     - **Equipment Asset:** `EQ-CAT-320-001 (Caterpillar 320D Excavator)`
+     - **Start Date:** `2026-11-01`
+     - **End Date:** `2026-11-10` *(10 billable days)*
+     - **Rate Applied (LKR):** `45,000.00`
+     - **Line Subtotal (Live JS Preview):** `Rs. 450,000.00`
+   - Click **"+ Add Equipment Asset"** to append a second line item.
+   - **Line Item #2:**
+     - **Equipment Asset:** `EQ-KOM-PC200-001 (Komatsu PC200-8 Excavator)`
+     - **Start Date:** `2026-11-01`
+     - **End Date:** `2026-11-10` *(10 billable days)*
+     - **Rate Applied (LKR):** `40,000.00`
+     - **Line Subtotal (Live JS Preview):** `Rs. 400,000.00`
+5. Observe the live calculated financial summary on the right sidebar updating dynamically.
+6. Click **Create Quotation & Compute Totals**.
 
 ---
 
@@ -281,25 +297,27 @@ The CERMS pricing engine strictly adheres to the following business logic:
 
 | Calculation Step | Arithmetic Operation | Expected Result (LKR) |
 | :--- | :--- | :--- |
-| **Duration ($D$)** | $10 \text{ Days}$ ($2026\text{-}11\text{-}01 \text{ to } 2026\text{-}11\text{-}10$) | **10 Days** |
-| **Base Tariff** | $10 \text{ days} \times \text{Rs. } 45,000.00$ | **Rs. 450,000.00** |
-| **5% Discount** | $5\% \times \text{Rs. } 450,000.00$ | **Rs. 22,500.00** |
-| **Net Base Tariff** | $\text{Rs. } 450,000.00 - \text{Rs. } 22,500.00$ | **Rs. 427,500.00** |
-| **Mobilization Logistics** | Fixed transport entry | **Rs. 50,000.00** |
-| **Taxable Base** | $\text{Rs. } 427,500.00 + \text{Rs. } 50,000.00$ | **Rs. 477,500.00** |
-| **VAT (18%)** | $18\% \times \text{Rs. } 477,500.00$ | **Rs. 85,950.00** |
-| **Grand Total** | $(\text{Rs. } 450,000 + 50,000 + 85,950) - 22,500$ | **Rs. 563,450.00** |
+| **Line 1 Subtotal (CAT 320D)** | $10 \text{ days} \times \text{Rs. } 45,000.00$ | **Rs. 450,000.00** |
+| **Line 2 Subtotal (Komatsu PC200)** | $10 \text{ days} \times \text{Rs. } 40,000.00$ | **Rs. 400,000.00** |
+| **Combined Base Tariff** | $\text{Rs. } 450,000.00 + \text{Rs. } 400,000.00$ | **Rs. 850,000.00** |
+| **5% Commercial Discount** | $5\% \times \text{Rs. } 850,000.00$ | **Rs. 42,500.00** |
+| **Net Base Tariff** | $\text{Rs. } 850,000.00 - \text{Rs. } 42,500.00$ | **Rs. 807,500.00** |
+| **Mobilization Logistics** | Fixed transport entry | **Rs. 75,000.00** |
+| **Taxable Base** | $\text{Rs. } 807,500.00 + \text{Rs. } 75,000.00$ | **Rs. 882,500.00** |
+| **VAT (18%)** | $18\% \times \text{Rs. } 882,500.00$ | **Rs. 158,850.00** |
+| **Grand Total Amount** | $(\text{Rs. } 850,000 + 75,000 + 158,850) - 42,500$ | **Rs. 1,041,350.00** |
 
 #### E. State Machine & UI Verification
 - **Quotation Status:** Created in `DRAFT` status (Grey Badge).
-- **Credit Check Validation:** `Access Engineering PLC` projected exposure is $\text{Rs. } 563,450.00 < \text{Credit Limit (Rs. } 2,000,000.00)$. The credit banner displays: *"Credit Check Passed (Margin Remaining: Rs. 1,436,550.00)"*.
+- **Multi-Item Specification Table:** Detail page renders an itemized table listing each asset, serial number, rental period, rate applied, and line subtotal.
+- **Credit Check Validation:** `Access Engineering PLC` projected exposure is $\text{Rs. } 1,041,350.00 < \text{Credit Limit (Rs. } 2,000,000.00)$. The credit banner displays: *"Credit Check Passed (Margin Remaining: Rs. 958,650.00)"* styled with a green success badge.
 
 ---
 
 ### Step 8: Managerial Approval & Rental Contract Conversion
 
 #### A. Feature Overview & Purpose
-Validates the approval hierarchy. Rental Officers cannot self-approve high-value quotations. Management must approve the commercial proposal before it can be converted into an official contract.
+Validates the approval hierarchy and multi-asset contract conversion. Rental Officers cannot self-approve quotations. Upon managerial approval and customer acceptance, converting the multi-item quotation automatically generates the master `RentalContract` and corresponding `RentalContractItem` child records, reserving all quoted machinery.
 
 #### B. Step-by-Step UI Actions
 1. While logged in as `rental_officer`, view the quotation detail page (`/rentals/quotations/QT-2026-0001/`).
@@ -314,13 +332,13 @@ Validates the approval hierarchy. Rental Officers cannot self-approve high-value
 9. Click **"Convert to Binding Rental Contract"**.
 10. In the modal dialog, select:
     - **Billing Cycle:** `MONTHLY` (or `DAILY`)
-    - **Deposit Paid at Signing (LKR):** `150,000.00`
+    - **Deposit Paid at Signing (LKR):** `250,000.00`
 11. Click **"Confirm & Generate Contract"**.
 
 #### C. State Machine & Expected Output
 - **Quotation State:** Marked as `CONVERTED` (Badge: Green).
-- **Contract Generated:** New Rental Contract `CNT-2026-0001` created in `ACTIVE` status.
-- **Fleet State Machine:** Asset `EQ-CAT-320-001` automatically transitions from `AVAILABLE` $\rightarrow$ `RESERVED`.
+- **Contract Generated:** New Rental Contract `CNT-2026-0001` created in `ACTIVE` status with individual child contract lines (`RentalContractItem`) for each machine.
+- **Fleet State Machine:** All quoted equipment assets (`EQ-CAT-320-001` and `EQ-KOM-PC200-001`) automatically transition from `AVAILABLE` $\rightarrow$ `RESERVED`.
 
 ---
 
