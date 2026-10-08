@@ -133,27 +133,76 @@ jobs:
             --output text)
 
           echo "SSM Command dispatched with ID: $COMMAND_ID"
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ env.PROD_INSTANCE_ID }}" || true
 
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ env.PROD_INSTANCE_ID }}" \
-            --query "Status" \
-            --output text)
+          export COMMAND_ID="$COMMAND_ID"
+          python3 - << 'EOF'
+          import time, subprocess, json, os, re, sys
 
-          OUTPUT=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ env.PROD_INSTANCE_ID }}" \
-            --query "StandardOutputContent" \
-            --output text)
+          prod_id = os.environ.get("PROD_INSTANCE_ID", "")
+          command_id = os.environ.get("COMMAND_ID", "")
 
-          STDERR=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ env.PROD_INSTANCE_ID }}" \
-            --query "StandardErrorContent" \
-            --output text)
+          max_attempts = 240
+          delay = 5
+          terminal_statuses = {"Success", "Failed", "Cancelled", "TimedOut", "Cancelling"}
+
+          print(f"Waiting for SSM command {command_id} on {prod_id} (Timeout: up to {max_attempts * delay}s / {max_attempts} attempts)...")
+
+          status = "Pending"
+          output = ""
+          stderr = ""
+
+          for attempt in range(1, max_attempts + 1):
+              try:
+                  res = subprocess.run([
+                      "aws", "ssm", "get-command-invocation",
+                      "--command-id", command_id,
+                      "--instance-id", prod_id,
+                      "--output", "json"
+                  ], capture_output=True, text=True, check=False)
+
+                  if res.returncode == 0 and res.stdout.strip():
+                      data = json.loads(res.stdout)
+                      status = data.get("Status", "Pending")
+                      output = data.get("StandardOutputContent", "")
+                      stderr = data.get("StandardErrorContent", "")
+
+                      if status in terminal_statuses:
+                          print(f"\n[SSM Finished] Execution completed with status: {status} (Attempt {attempt}/{max_attempts}, Elapsed: {attempt * delay}s)")
+                          break
+                      else:
+                          if attempt % 6 == 0 or attempt == 1:
+                              print(f"[*] SSM execution in progress... Status: {status} (Elapsed: {attempt * delay}s)")
+                  else:
+                      if attempt % 6 == 0 or attempt == 1:
+                          print(f"[*] Waiting for SSM command invocation to initialize... (Elapsed: {attempt * delay}s)")
+              except Exception as e:
+                  print(f"[!] Polling warning: {e}")
+
+              time.sleep(delay)
+          else:
+              print(f"\n[ERROR] SSM command execution timed out after {max_attempts * delay} seconds! Last status: {status}")
+
+          with open("ssm_status.txt", "w") as f:
+              f.write(status)
+
+          with open("ssm_output.txt", "w") as f:
+              f.write(output)
+
+          with open("ssm_stderr.txt", "w") as f:
+              f.write(stderr)
+
+          match = re.search(r'\{[\s\S]*"total_tested"[\s\S]*\}', output)
+          if match:
+              with open('prod_smoke_summary.json', 'w') as f:
+                  f.write(match.group(0))
+          else:
+              with open('prod_smoke_summary.json', 'w') as f:
+                  json.dump({'total_tested': 0, 'success_count': 0, 'protected_count': 0, 'crashes': 0, 'failed_routes': [], 'status': 'PASSED'}, f)
+          EOF
+
+          STATUS=$(cat ssm_status.txt 2>/dev/null || echo "Unknown")
+          OUTPUT=$(cat ssm_output.txt 2>/dev/null || echo "")
+          STDERR=$(cat ssm_stderr.txt 2>/dev/null || echo "")
 
           echo "=== PRODUCTION DEPLOY OUTPUT ==="
           echo "$OUTPUT"
@@ -163,24 +212,12 @@ jobs:
             echo "$STDERR"
           fi
 
-          export RAW_SSM_OUTPUT="$OUTPUT"
-          python3 - << 'EOF'
-          import sys, json, re, os
-          text = os.environ.get("RAW_SSM_OUTPUT", "")
-          match = re.search(r'\{[\s\S]*\"total_tested\"[\s\S]*\}', text)
-          if match:
-              with open('prod_smoke_summary.json', 'w') as f:
-                  f.write(match.group(0))
-          else:
-              with open('prod_smoke_summary.json', 'w') as f:
-                  json.dump({'total_tested': 0, 'success_count': 0, 'protected_count': 0, 'crashes': 0, 'failed_routes': [], 'status': 'PASSED'}, f)
-          EOF
-
           echo "Extracted JSON Summary:"
           cat prod_smoke_summary.json
 
           if [ "$STATUS" != "Success" ]; then
             echo "::error title=Production Deployment Failed::SSM execution returned status: $STATUS"
+            echo "Error Output: $STDERR"
             exit 1
           fi
 
