@@ -329,6 +329,67 @@ class QuotationContractModelTestCase(TestCase):
         # Form clean must correct grand_total_amount: (450,000 + 50,000 + 85,950) - 22,500 = 563,450.00
         self.assertEqual(quotation.grand_total_amount, Decimal("563450.00"))
 
+    def test_quotation_no_auto_generation(self):
+        # 1. Existing quotation in setUp is QT-2026-0001 -> next code should be QT-2026-0002
+        next_code = Quotation.generate_quotation_no(year=2026)
+        self.assertEqual(next_code, "QT-2026-0002")
+
+        # 2. Test empty year start -> QT-2027-0001
+        new_year_code = Quotation.generate_quotation_no(year=2027)
+        self.assertEqual(new_year_code, "QT-2027-0001")
+
+        # 3. Create another quotation without quotation_no and verify auto-assignment
+        new_quote = Quotation.objects.create(
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 15),
+            end_date=date(2026, 11, 20),
+            rate_applied=Decimal("50000.00"),
+            rate_type=Quotation.RateType.DAILY,
+        )
+        self.assertEqual(new_quote.quotation_no, "QT-2026-0002")
+
+        # 4. Create one with a higher sequence number to test non-contiguous max sequence discovery
+        Quotation.objects.create(
+            quotation_no="QT-2026-0010",
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 5),
+            rate_applied=Decimal("50000.00"),
+            rate_type=Quotation.RateType.DAILY,
+        )
+        # Next code should be QT-2026-0011
+        self.assertEqual(Quotation.generate_quotation_no(year=2026), "QT-2026-0011")
+
+    def test_quotation_form_auto_generation_and_readonly(self):
+        # 1. New form initializes with next quotation_no and readonly widget
+        form = QuotationForm()
+        self.assertTrue(form.fields['quotation_no'].widget.attrs.get('readonly'))
+        self.assertIn('bg-light', form.fields['quotation_no'].widget.attrs.get('class', ''))
+        self.assertEqual(form.initial.get('quotation_no'), "QT-2026-0002")
+
+        # 2. Form submission without quotation_no should auto-assign next number
+        form_data = {
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'equipment': self.equipment.pk,
+            'start_date': '2026-11-01',
+            'end_date': '2026-11-10',
+            'rate_type': Quotation.RateType.DAILY,
+            'rate_applied': '45000.00',
+            'estimated_transport_cost': '50000.00',
+            'security_deposit_required': '100000.00',
+            'discount_percentage': '5.00',
+            'status': Quotation.Status.DRAFT,
+        }
+        form = QuotationForm(data=form_data)
+        self.assertTrue(form.is_valid(), form.errors)
+        saved_quote = form.save()
+        self.assertEqual(saved_quote.quotation_no, "QT-2026-0002")
+
     def test_contract_and_dispatch_properties(self):
         self.assertEqual(str(self.contract), "CNT-2026-0001 - Sanken Construction (EQ-CAT-320-001)")
         self.assertEqual(str(self.dispatch_return), "TRX-2026-0001 - EQ-CAT-320-001 (CNT-2026-0001)")

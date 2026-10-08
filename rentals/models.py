@@ -471,8 +471,56 @@ class Quotation(TimeStampedModel):
             'grand_total_amount': grand_total.quantize(Decimal('0.01')),
         }
 
+    @classmethod
+    def generate_quotation_no(cls, year: int = None, existing_pk=None) -> str:
+        """
+        Generates standard quotation number in the format:
+        QT-[YYYY]-[Sequence_Number] (e.g., QT-2026-0001).
+        Queries the database for the latest quotation number for the year,
+        extracts the sequence number, and increments logically.
+        """
+        import re
+        from django.utils import timezone
+
+        if not year:
+            year = timezone.now().year
+
+        prefix = f"QT-{year}-"
+
+        # Query all existing quotation numbers for this year prefix
+        qs = cls.objects.filter(quotation_no__startswith=prefix)
+        if existing_pk:
+            qs = qs.exclude(pk=existing_pk)
+
+        existing_codes = list(qs.values_list('quotation_no', flat=True))
+
+        # Extract sequence numbers to find maximum sequence for current year
+        max_seq = 0
+        for code in existing_codes:
+            match = re.search(r'QT-\d{4}-(\d+)', code)
+            if match:
+                try:
+                    seq_num = int(match.group(1))
+                    if seq_num > max_seq:
+                        max_seq = seq_num
+                except ValueError:
+                    continue
+
+        next_seq = max_seq + 1
+        candidate_code = f"{prefix}{next_seq:04d}"
+
+        # Safety loop to prevent PK collisions
+        while cls.objects.filter(quotation_no=candidate_code).exclude(pk=existing_pk).exists():
+            next_seq += 1
+            candidate_code = f"{prefix}{next_seq:04d}"
+
+        return candidate_code
+
     def save(self, *args, **kwargs):
-        """Ensure financial totals adhere strictly to business calculation formulas."""
+        """Ensure quotation number and financial totals adhere strictly to business calculation formulas."""
+        if not self.quotation_no:
+            self.quotation_no = self.generate_quotation_no(existing_pk=self.pk)
+
         if self.subtotal_amount is None and self.rate_applied is not None:
             self.subtotal_amount = Decimal(self.duration_days) * self.rate_applied
 

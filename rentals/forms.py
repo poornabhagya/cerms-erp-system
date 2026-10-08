@@ -174,7 +174,7 @@ class ProjectSiteForm(forms.ModelForm):
 
     def clean_project_code(self):
         code = self.cleaned_data.get('project_code')
-        customer = self.cleaned_data.get('customer')
+        customer = self.cleaned_data.get('customer') or self.data.get('customer')
         if not code:
             code = ProjectSite.generate_project_code(customer=customer, existing_pk=self.instance.pk)
         return code
@@ -184,6 +184,32 @@ class QuotationForm(forms.ModelForm):
     """
     Form for building commercial quotations with dynamic pricing, transport, discount, and tax calculations.
     """
+    quotation_no = forms.CharField(
+        label=_("Quotation Number"),
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Auto-generated (e.g. QT-2026-0001)',
+            'readonly': 'readonly',
+            'class': 'form-control bg-light font-monospace fw-semibold text-primary',
+            'id': 'id_quotation_no',
+        }),
+        help_text=_("System auto-generated identifier (QT-YYYY-XXXX).")
+    )
+    subtotal_amount = forms.DecimalField(
+        label=_("Subtotal Amount (LKR)"),
+        required=False,
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_subtotal'}),
+    )
+    total_tax_amount = forms.DecimalField(
+        label=_("Total Tax Amount (LKR)"),
+        required=False,
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_tax_amount'}),
+    )
+    grand_total_amount = forms.DecimalField(
+        label=_("Grand Total Amount (LKR)"),
+        required=False,
+        widget=forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_grand_total'}),
+    )
 
     class Meta:
         model = Quotation
@@ -218,6 +244,15 @@ class QuotationForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            if not self.initial.get('quotation_no'):
+                self.initial['quotation_no'] = Quotation.generate_quotation_no()
+            self.fields['quotation_no'].widget.attrs['readonly'] = True
+            self.fields['quotation_no'].widget.attrs['class'] = 'form-control bg-light font-monospace fw-semibold text-primary'
+        else:
+            self.fields['quotation_no'].widget.attrs['readonly'] = True
+            self.fields['quotation_no'].widget.attrs['class'] = 'form-control bg-light font-monospace'
+
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -255,6 +290,12 @@ class QuotationForm(forms.ModelForm):
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
+
+    def clean_quotation_no(self):
+        code = self.cleaned_data.get('quotation_no')
+        if not code:
+            code = Quotation.generate_quotation_no(existing_pk=self.instance.pk)
+        return code
 
     def clean(self):
         cleaned_data = super().clean()

@@ -446,9 +446,7 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
 
     def get_initial(self):
         initial = super().get_initial()
-        current_year = timezone.now().year
-        count = Quotation.objects.filter(quotation_no__startswith=f"QT-{current_year}-").count() + 1
-        initial['quotation_no'] = f"QT-{current_year}-{count:04d}"
+        initial['quotation_no'] = Quotation.generate_quotation_no()
         initial['start_date'] = self.request.GET.get('start_date') or timezone.now().date()
         if self.request.GET.get('end_date'):
             initial['end_date'] = self.request.GET.get('end_date')
