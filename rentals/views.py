@@ -431,6 +431,7 @@ class QuotationDetailView(RoleRequiredMixin, DetailView):
 
         # Real-time credit validation check
         context['credit_check'] = validate_customer_credit_limit(quotation.customer, quotation.grand_total_amount)
+        context['can_approve'] = (self.request.user.role in [User.Role.MANAGEMENT, User.Role.ADMINISTRATOR] or self.request.user.is_superuser)
         context['can_convert'] = (quotation.status in [Quotation.Status.ACCEPTED, Quotation.Status.APPROVED_BY_MANAGEMENT]) and not hasattr(quotation, 'contract')
         context['has_contract'] = hasattr(quotation, 'contract')
 
@@ -575,7 +576,7 @@ class QuotationStatusTransitionView(RoleRequiredMixin, View):
                 messages.info(request, f"Quotation '{quotation.quotation_no}' submitted for management approval.")
 
             elif action == 'approve':
-                if request.user.role not in [User.Role.MANAGEMENT, User.Role.ADMINISTRATOR]:
+                if request.user.role not in [User.Role.MANAGEMENT, User.Role.ADMINISTRATOR] and not request.user.is_superuser:
                     messages.error(request, "Only Management or Administrators can approve commercial quotations.")
                     return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
                 quotation.status = Quotation.Status.APPROVED_BY_MANAGEMENT
