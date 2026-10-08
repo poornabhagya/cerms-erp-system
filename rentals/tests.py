@@ -477,6 +477,34 @@ class QuotationContractModelTestCase(TestCase):
         saved_quote = form.save()
         self.assertEqual(saved_quote.quotation_no, "QT-2026-0002")
 
+    def test_formset_extra_empty_row_ignored_on_save(self):
+        # Test that an extra unselected line item row does not trigger "This field is required" error
+        formset_data = {
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1',
+            'items-MAX_NUM_FORMS': '1000',
+            # Item 0 (Valid Item)
+            'items-0-equipment': str(self.equipment.pk),
+            'items-0-start_date': '2026-11-01',
+            'items-0-end_date': '2026-11-10',
+            'items-0-rate_type': Quotation.RateType.DAILY,
+            'items-0-rate_applied': '45000.00',
+            'items-0-subtotal_amount': '450000.00',
+            # Item 1 (Extra empty unselected row)
+            'items-1-equipment': '',
+            'items-1-start_date': '',
+            'items-1-end_date': '',
+            'items-1-rate_type': Quotation.RateType.DAILY,
+            'items-1-rate_applied': '',
+            'items-1-subtotal_amount': '',
+        }
+        formset = QuotationItemFormSet(data=formset_data)
+        self.assertTrue(formset.is_valid(), formset.errors)
+        # Verify only 1 valid form is recognized
+        valid_forms = [f for f in formset.forms if f.cleaned_data and not f.cleaned_data.get('DELETE') and f.cleaned_data.get('equipment')]
+        self.assertEqual(len(valid_forms), 1)
+
     def test_contract_and_dispatch_properties(self):
         self.assertEqual(str(self.contract), "CNT-2026-0001 - Sanken Construction (EQ-CAT-320-001)")
         self.assertEqual(str(self.dispatch_return), "TRX-2026-0001 - EQ-CAT-320-001 (CNT-2026-0001)")

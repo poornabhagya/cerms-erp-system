@@ -184,12 +184,36 @@
                                 {% endif %}
                                 {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
                                     {% if q.status != 'CONVERTED' %}
-                                    <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=q.quotation_no %}" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete quotation {{ q.quotation_no }}?');">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-danger" title="Delete Quotation">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteQuoteModal-{{ q.quotation_no }}" title="Delete Quotation">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+
+                                    <!-- Delete Modal for {{ q.quotation_no }} -->
+                                    <div class="modal fade text-start" id="deleteQuoteModal-{{ q.quotation_no }}" tabindex="-1" aria-labelledby="deleteQuoteModalLabel-{{ q.quotation_no }}" aria-hidden="true">
+                                        <div class="modal-dialog">
+                                            <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=q.quotation_no %}">
+                                                {% csrf_token %}
+                                                <div class="modal-content border-0 shadow">
+                                                    <div class="modal-header bg-danger text-white">
+                                                        <h5 class="modal-title fw-bold" id="deleteQuoteModalLabel-{{ q.quotation_no }}">
+                                                            <i class="bi bi-exclamation-triangle-fill me-2"></i> Confirm Quotation Deletion
+                                                        </h5>
+                                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body p-4">
+                                                        <p class="mb-2">Are you sure you want to permanently delete quotation <strong>{{ q.quotation_no }}</strong> for <strong>{{ q.customer.company_name }}</strong>?</p>
+                                                        <p class="text-muted small mb-0">Total Package Value: <strong>LKR {{ q.grand_total_amount|floatformat:2 }}</strong></p>
+                                                    </div>
+                                                    <div class="modal-footer bg-light">
+                                                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <button type="submit" class="btn btn-danger px-3">
+                                                            <i class="bi bi-trash3 me-1"></i> Delete Quotation
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
                                     {% endif %}
                                 {% endif %}
                             </div>

@@ -232,12 +232,14 @@ class QuotationForm(forms.ModelForm):
             'status',
         ]
         widgets = {
+            'customer': forms.Select(attrs={'class': 'form-select', 'id': 'id_customer'}),
+            'project_site': forms.Select(attrs={'class': 'form-select', 'id': 'id_project_site'}),
             'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_start_date'}),
             'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control', 'id': 'id_end_date'}),
             'rate_type': forms.Select(attrs={'class': 'form-select', 'id': 'id_rate_type'}),
-            'estimated_transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_transport_cost'}),
-            'security_deposit_required': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'id': 'id_deposit_required'}),
-            'discount_percentage': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '100', 'id': 'id_discount_pct'}),
+            'estimated_transport_cost': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'form-control font-monospace', 'id': 'id_transport_cost', 'placeholder': '0.00'}),
+            'security_deposit_required': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'form-control font-monospace', 'id': 'id_deposit_required', 'placeholder': '0.00'}),
+            'discount_percentage': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'max': '100', 'class': 'form-control font-monospace', 'id': 'id_discount_pct', 'placeholder': '0.00'}),
             'status': forms.Select(attrs={'class': 'form-select', 'id': 'id_status'}),
         }
 
@@ -251,6 +253,15 @@ class QuotationForm(forms.ModelForm):
         else:
             self.fields['quotation_no'].widget.attrs['readonly'] = True
             self.fields['quotation_no'].widget.attrs['class'] = 'form-control bg-light font-monospace'
+
+        # Ensure all widgets have standard Bootstrap form classes
+        for name, field in self.fields.items():
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault('class', 'form-select')
+            else:
+                existing_class = field.widget.attrs.get('class', '')
+                if 'form-control' not in existing_class and 'form-select' not in existing_class:
+                    field.widget.attrs['class'] = f"form-control {existing_class}".strip()
 
         self.helper = FormHelper()
         self.helper.form_tag = False
@@ -353,6 +364,20 @@ class QuotationItemForm(forms.ModelForm):
             'rate_applied': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'form-control item-rate', 'placeholder': '0.00'}),
         }
 
+    def has_changed(self):
+        """
+        Prevents extra unselected forms from triggering validation errors.
+        An item is considered changed only if equipment is selected or an existing item is modified.
+        """
+        if not self.instance.pk:
+            if not self.data:
+                return super().has_changed()
+            prefix = self.prefix
+            equipment_val = self.data.get(f'{prefix}-equipment')
+            if not equipment_val:
+                return False
+        return super().has_changed()
+
     def clean(self):
         cleaned_data = super().clean()
         equipment = cleaned_data.get('equipment')
@@ -370,10 +395,38 @@ class QuotationItemForm(forms.ModelForm):
         return cleaned_data
 
 
+class BaseQuotationItemFormSet(forms.BaseInlineFormSet):
+    """
+    Custom inline formset for QuotationItems guaranteeing at least one valid line item
+    and preventing injection of mandatory blank rows on existing quotations.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # If editing an existing quotation, do not append extra blank forms
+        if self.instance and self.instance.pk:
+            self.extra = 0
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        valid_items_count = 0
+        for form in self.forms:
+            if not hasattr(form, 'cleaned_data') or self._should_delete_form(form):
+                continue
+            if form.cleaned_data.get('equipment'):
+                valid_items_count += 1
+
+        if valid_items_count == 0:
+            raise forms.ValidationError(_("At least one equipment asset line item must be specified for the quotation."))
+
+
 QuotationItemFormSet = inlineformset_factory(
     Quotation,
     QuotationItem,
     form=QuotationItemForm,
+    formset=BaseQuotationItemFormSet,
     extra=1,
     can_delete=True,
     min_num=1,

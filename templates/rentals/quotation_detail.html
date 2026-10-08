@@ -102,12 +102,9 @@
 
         {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
             {% if not has_contract and quotation.status != 'CONVERTED' %}
-            <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=quotation.quotation_no %}" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete quotation {{ quotation.quotation_no }}? This action cannot be undone.');">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-outline-danger">
-                    <i class="bi bi-trash me-1"></i> Delete Quote
-                </button>
-            </form>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteQuotationModal">
+                <i class="bi bi-trash me-1"></i> Delete Quote
+            </button>
             {% endif %}
         {% endif %}
     </div>
@@ -380,6 +377,36 @@
                 </div>
             </form>
         </div>
+    </div>
+</div>
+{% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
+<!-- Delete Quotation Modal -->
+<div class="modal fade" id="deleteQuotationModal" tabindex="-1" aria-labelledby="deleteQuotationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'rentals:quotation_delete' quotation_no=quotation.quotation_no %}">
+            {% csrf_token %}
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="deleteQuotationModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i> Confirm Quotation Deletion
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="mb-2">Are you sure you want to permanently delete commercial quotation <strong>{{ quotation.quotation_no }}</strong> for <strong>{{ quotation.customer.company_name }}</strong>?</p>
+                    <div class="alert alert-warning py-2 small mb-0">
+                        <i class="bi bi-shield-exclamation me-1"></i>
+                        <strong>Protection Rule:</strong> Quotations that have already been converted to binding contracts cannot be deleted. This action is permanent and cannot be undone.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger px-3">
+                        <i class="bi bi-trash3 me-1"></i> Delete Quotation
+                    </button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 {% endif %}

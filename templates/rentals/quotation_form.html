@@ -51,32 +51,37 @@
                 <i class="bi bi-file-earmark-text text-primary me-2"></i> 1. Quotation Scope & Scheduling
             </h5>
         </div>
-        <div class="card-body">
+        <div class="card-body p-4">
             <div class="row g-3">
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Quotation Number</label>
+                    <label class="form-label fw-semibold" for="id_quotation_no">Quotation Number</label>
                     {{ form.quotation_no }}
-                    <small class="text-muted">{{ form.quotation_no.help_text }}</small>
+                    <small class="text-muted d-block mt-1">{{ form.quotation_no.help_text }}</small>
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
+                    <label class="form-label fw-semibold" for="id_customer">Customer <span class="text-danger">*</span></label>
                     {{ form.customer }}
+                    {% if form.customer.errors %}<div class="text-danger small mt-1">{{ form.customer.errors }}</div>{% endif %}
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Project Site <span class="text-danger">*</span></label>
+                    <label class="form-label fw-semibold" for="id_project_site">Project Site <span class="text-danger">*</span></label>
                     {{ form.project_site }}
+                    {% if form.project_site.errors %}<div class="text-danger small mt-1">{{ form.project_site.errors }}</div>{% endif %}
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Quotation Start Date <span class="text-danger">*</span></label>
+                    <label class="form-label fw-semibold" for="id_start_date">Default Start Date <span class="text-danger">*</span></label>
                     {{ form.start_date }}
+                    {% if form.start_date.errors %}<div class="text-danger small mt-1">{{ form.start_date.errors }}</div>{% endif %}
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Quotation End Date <span class="text-danger">*</span></label>
+                    <label class="form-label fw-semibold" for="id_end_date">Default End Date <span class="text-danger">*</span></label>
                     {{ form.end_date }}
+                    {% if form.end_date.errors %}<div class="text-danger small mt-1">{{ form.end_date.errors }}</div>{% endif %}
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Default Rate Type</label>
+                    <label class="form-label fw-semibold" for="id_rate_type">Default Rate Frequency</label>
                     {{ form.rate_type }}
+                    {% if form.rate_type.errors %}<div class="text-danger small mt-1">{{ form.rate_type.errors }}</div>{% endif %}
                 </div>
             </div>
         </div>
@@ -91,7 +96,7 @@
                 </h5>
                 <small class="text-muted">Add one or multiple machinery assets to this commercial quotation package.</small>
             </div>
-            <button type="button" class="btn btn-outline-success btn-sm fw-semibold" id="add-item-btn">
+            <button type="button" class="btn btn-outline-success btn-sm fw-semibold shadow-sm" id="add-item-btn">
                 <i class="bi bi-plus-circle me-1"></i> Add Equipment Asset
             </button>
         </div>
@@ -101,41 +106,56 @@
                 <table class="table table-hover align-middle mb-0" id="items-table">
                     <thead class="table-light">
                         <tr>
-                            <th style="min-width: 260px;" class="ps-3">Equipment Asset <span class="text-danger">*</span></th>
+                            <th style="min-width: 280px;" class="ps-3">Equipment Asset <span class="text-danger">*</span></th>
                             <th style="min-width: 140px;">Start Date</th>
                             <th style="min-width: 140px;">End Date</th>
                             <th style="min-width: 120px;">Rate Type</th>
-                            <th style="min-width: 150px;">Rate Applied (LKR) <span class="text-danger">*</span></th>
-                            <th style="min-width: 150px;">Line Subtotal (LKR)</th>
-                            <th style="width: 60px;" class="text-center">Remove</th>
+                            <th style="min-width: 160px;">Rate Applied (LKR) <span class="text-danger">*</span></th>
+                            <th style="min-width: 160px;">Line Subtotal (LKR)</th>
+                            <th style="width: 70px;" class="text-center pe-3">Remove</th>
                         </tr>
                     </thead>
                     <tbody id="items-tbody">
                         {% for item_form in item_formset %}
-                        <tr class="item-row">
+                        <tr class="item-row" {% if item_form.instance.pk %}data-has-pk="1"{% endif %}>
                             <td class="ps-3">
                                 {{ item_form.id }}
                                 {{ item_form.equipment }}
                                 {% if item_form.equipment.errors %}
-                                    <div class="text-danger small">{{ item_form.equipment.errors }}</div>
+                                    <div class="text-danger small mt-1">{{ item_form.equipment.errors }}</div>
                                 {% endif %}
                             </td>
                             <td>
                                 {{ item_form.start_date }}
+                                {% if item_form.start_date.errors %}
+                                    <div class="text-danger small mt-1">{{ item_form.start_date.errors }}</div>
+                                {% endif %}
                             </td>
                             <td>
                                 {{ item_form.end_date }}
+                                {% if item_form.end_date.errors %}
+                                    <div class="text-danger small mt-1">{{ item_form.end_date.errors }}</div>
+                                {% endif %}
                             </td>
                             <td>
                                 {{ item_form.rate_type }}
                             </td>
                             <td>
-                                {{ item_form.rate_applied }}
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-light">Rs.</span>
+                                    {{ item_form.rate_applied }}
+                                </div>
+                                {% if item_form.rate_applied.errors %}
+                                    <div class="text-danger small mt-1">{{ item_form.rate_applied.errors }}</div>
+                                {% endif %}
                             </td>
                             <td>
-                                {{ item_form.subtotal_amount }}
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-light">Rs.</span>
+                                    {{ item_form.subtotal_amount }}
+                                </div>
                             </td>
-                            <td class="text-center">
+                            <td class="text-center pe-3">
                                 {% if item_form.instance.pk %}
                                     <div class="d-none">{{ item_form.DELETE }}</div>
                                     <button type="button" class="btn btn-outline-danger btn-sm delete-row-btn" title="Remove Asset">
@@ -166,9 +186,19 @@
                 <td>{{ item_formset.empty_form.start_date }}</td>
                 <td>{{ item_formset.empty_form.end_date }}</td>
                 <td>{{ item_formset.empty_form.rate_type }}</td>
-                <td>{{ item_formset.empty_form.rate_applied }}</td>
-                <td>{{ item_formset.empty_form.subtotal_amount }}</td>
-                <td class="text-center">
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ item_formset.empty_form.rate_applied }}
+                    </div>
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ item_formset.empty_form.subtotal_amount }}
+                    </div>
+                </td>
+                <td class="text-center pe-3">
                     <button type="button" class="btn btn-outline-danger btn-sm remove-new-row-btn" title="Remove Asset">
                         <i class="bi bi-trash"></i>
                     </button>
@@ -184,37 +214,57 @@
                 <i class="bi bi-cash-stack text-primary me-2"></i> 3. Commercial Pricing & Statutory Taxes
             </h5>
         </div>
-        <div class="card-body">
+        <div class="card-body p-4">
             <div class="row g-3">
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Estimated Transport Cost (LKR)</label>
-                    {{ form.estimated_transport_cost }}
-                    <small class="text-muted">Round-trip mobilization logistics</small>
+                    <label class="form-label fw-semibold" for="id_transport_cost">Estimated Transport Cost</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ form.estimated_transport_cost }}
+                    </div>
+                    <small class="text-muted d-block mt-1">Round-trip mobilization logistics</small>
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Security Deposit Required (LKR)</label>
-                    {{ form.security_deposit_required }}
-                    <small class="text-muted">Refundable cash escrow guarantee</small>
+                    <label class="form-label fw-semibold" for="id_deposit_required">Security Deposit Required</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ form.security_deposit_required }}
+                    </div>
+                    <small class="text-muted d-block mt-1">Refundable cash escrow guarantee</small>
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Commercial Discount (%)</label>
-                    {{ form.discount_percentage }}
-                    <small class="text-muted">Applied directly against the Base Tariff</small>
+                    <label class="form-label fw-semibold" for="id_discount_pct">Commercial Discount</label>
+                    <div class="input-group">
+                        {{ form.discount_percentage }}
+                        <span class="input-group-text bg-light">%</span>
+                    </div>
+                    <small class="text-muted d-block mt-1">Applied directly against the Base Tariff</small>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold" for="id_subtotal">Base Tariff (Sum of Items)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ form.subtotal_amount }}
+                    </div>
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Base Tariff (Sum of Items)</label>
-                    {{ form.subtotal_amount }}
+                    <label class="form-label fw-semibold" for="id_tax_amount">Statutory Tax (18% VAT)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">Rs.</span>
+                        {{ form.total_tax_amount }}
+                    </div>
                 </div>
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Statutory Tax (18% VAT)</label>
-                    {{ form.total_tax_amount }}
+                    <label class="form-label fw-semibold text-success" for="id_grand_total">Grand Total Commercial Value</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-success text-white fw-bold">Rs.</span>
+                        {{ form.grand_total_amount }}
+                    </div>
                 </div>
-                <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Grand Total Commercial Value</label>
-                    {{ form.grand_total_amount }}
-                </div>
+
                 <div class="col-12 col-md-6">
-                    <label class="form-label fw-semibold">Lifecycle Status</label>
+                    <label class="form-label fw-semibold" for="id_status">Lifecycle Status</label>
                     {{ form.status }}
                 </div>
             </div>
@@ -223,7 +273,7 @@
 
     <!-- Action Bar -->
     <div class="card border-0 shadow-sm bg-light p-3 mb-4">
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="text-muted small">
                 <i class="bi bi-calculator me-1 text-primary"></i> Multi-Item Engine: Subtotals, Transport, VAT (18%), and Grand Total calculate in real time.
             </div>
@@ -273,16 +323,25 @@ document.addEventListener('DOMContentLoaded', function () {
     function calculateRow(row) {
         if (row.style.display === 'none') return 0;
 
+        const eqSelect = row.querySelector('.item-equipment');
         const sInput = row.querySelector('.item-start-date');
         const eInput = row.querySelector('.item-end-date');
         const rateInput = row.querySelector('.item-rate');
         const subInput = row.querySelector('.item-subtotal');
 
+        const hasEquipment = eqSelect && eqSelect.value;
+        const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
+
+        // If no equipment and rate is 0 on a non-saved row, do not dirty it with 0.00
+        if (!hasEquipment && rate === 0 && !row.dataset.hasPk) {
+            if (subInput) subInput.value = '';
+            return 0;
+        }
+
         const startVal = sInput && sInput.value ? sInput.value : (parentStartInput ? parentStartInput.value : '');
         const endVal = eInput && eInput.value ? eInput.value : (parentEndInput ? parentEndInput.value : '');
         const days = getDays(startVal, endVal);
 
-        const rate = parseFloat(rateInput ? rateInput.value : 0) || 0;
         const rowSubtotal = days * rate;
 
         if (subInput) {
@@ -390,7 +449,6 @@ document.addEventListener('DOMContentLoaded', function () {
     [parentStartInput, parentEndInput, transportInput, discountInput].forEach(function (elem) {
         if (elem) {
             elem.addEventListener('input', function () {
-                // Update empty child row dates if applicable
                 calculateAllTotals();
             });
             elem.addEventListener('change', function () {
