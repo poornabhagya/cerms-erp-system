@@ -367,35 +367,99 @@ Validates visual scheduling, conflict detection, and color-coded event rendering
 
 ---
 
-### Step 10: Equipment Dispatch Handover & Logistics Log
+### Step 10: Equipment Dispatch Certification & Physical Inspection
 
 #### A. Feature Overview & Purpose
-Performs physical equipment handover from central yard to customer site, records initial hour meters and fuel levels, and transitions asset state to `ON_RENT`.
+Performs physical equipment handover from central yard to customer site. Records initial hour meters, fuel levels, and a structured per-component inspection checklist with Pass/Fail status and defect remarks. Transitions asset state to `ON_RENT` on successful submission.
 
-#### B. Step-by-Step UI Actions
-1. Log in as `ops_officer` (`Staff@CERMS2026!`) or `field_officer`.
-2. Navigate to the contract dossier (`/rentals/contracts/CNT-2026-0001/`).
-3. Click the button **"Process Equipment Dispatch"** (`/rentals/contracts/CNT-2026-0001/dispatch/`).
-4. Fill in the dispatch inspection form:
+**Checklist UI Features (as of refactored UI):**
+- Each inspection item has a **Pass checkbox** (checked = Pass, unchecked = Fail).
+- Unchecking a row auto-expands a **red defect remarks field** requiring a written description.
+- **"Mark All as Passed"** button instantly sets all rows to Pass and hides all defect fields.
+- Quick pill buttons append pre-named rows in one click.
+- JSON serialized as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
+
+---
+
+#### B. Test Case 10a — Instant All-Passed Dispatch
+
+**Pre-condition:** Contract `CNT-2026-0001` is in `ACTIVE` status with asset `EQ-CAT-320-001` in `RESERVED` state.
+
+1. Log in as `ops_officer` (`Staff@CERMS2026!`).
+2. Navigate to `/rentals/contracts/CNT-2026-0001/`.
+3. Click **"Process Equipment Dispatch"** → navigates to `/rentals/contracts/CNT-2026-0001/dispatch/`.
+4. Fill in the header fields:
    - **Dispatch Date & Time:** `2026-11-01 08:30`
    - **Dispatch Hour Meter (hrs):** `1,250.00`
-   - **Dispatch Fuel Level (%):** `100.00` (Full tank)
-   - **Transport Method:** `Low-Bed Carrier Trailer (Reg: WP-DA-5544)`
-   - **Operator Assigned:** `Rathnayake Bandara (LIC-HV-9982)`
-   - **Physical Checklist Verification:**
-     - Cabin & Windshield: Clean & Intact
-     - Hydraulic Lines & Hoses: No leaks, high pressure tested
-     - Undercarriage / Tracks: Tension verified
-     - Safety Beacon & Backup Alarm: Operational
-5. Click **Confirm Dispatch Handover**.
+   - **Dispatch Fuel Level (%):** `100`
+5. Verify the checklist table pre-populates with 6 standard rows, all **checkboxes checked** (Pass).
+6. Click the **"Mark All as Passed"** button.
+   - **Expected:** All checkboxes remain checked; all defect input fields are hidden; row background is white.
+7. Click **"Certify & Dispatch Machinery"**.
 
-#### C. State Machine & Expected Output
-- **Logistics Record:** `DispatchReturn` record created with transaction ID `TRX-2026-0001`.
+**Expected Output:**
+- `DispatchReturn` record created (transaction ID `TRX-2026-0001`).
+- `RentalContract` status transitions to `ON_RENT`.
+- `Equipment` asset `EQ-CAT-320-001` status transitions to `ON_RENT` (Blue Badge).
+- Availability Calendar event changes from Yellow → **Blue (`#0d6efd`)**.
+- `dispatch_checklist` JSON in database: all items show `"status": "Pass"` and `"remarks": ""`.
+
+---
+
+#### C. Test Case 10b — Defect / Failure Logging
+
+1. Navigate to the dispatch form for a second contract (or reset test data).
+2. On the checklist table, **uncheck** the row for `Hydraulic Lines & Hoses`.
+   - **Expected:** Checkbox unchecks, the green "Pass — No Issues" label hides, and a **red-bordered defect text input** expands within that row. The row background turns **red (`table-danger`)**.
+3. Type in the defect input: `Leaking main cylinder seal — requires immediate attention`.
+4. Leave all other rows checked (Pass).
+5. Click **"Certify & Dispatch Machinery"**.
+
+**Expected Output:**
+- Form submits successfully.
+- `dispatch_checklist` JSON in the `DispatchReturn` record contains:
+  ```json
+  {
+    "Cabin & Windshield":      { "status": "Pass", "remarks": "" },
+    "Hydraulic Lines & Hoses": { "status": "Fail", "remarks": "Leaking main cylinder seal — requires immediate attention" },
+    "Undercarriage / Tracks":  { "status": "Pass", "remarks": "" },
+    "Safety Beacon & Alarm":   { "status": "Pass", "remarks": "" },
+    "Engine & Fluid Levels":   { "status": "Pass", "remarks": "" },
+    "Transport Tie-Downs":     { "status": "Pass", "remarks": "" }
+  }
+  ```
+- The system does **not** block submission (defect logging is for records only; dispatch proceeds).
+
+---
+
+#### D. Test Case 10c — Dynamic Item Addition & Deletion
+
+1. On the dispatch form, click the pill button **"+ Safety Beacon & Alarm"**.
+   - **Expected:** Since the item already exists, no duplicate row is appended. Focus moves to the existing row's checkbox.
+2. Click **"+ Add Item"** button.
+   - **Expected:** A new blank row is appended with the component name input focused.
+3. Type `Bucket / Blade Attachment` in the component name field.
+4. Leave checkbox checked (Pass). Verify the "Pass — No Issues" label is visible.
+5. Click the 🗑️ **trash icon** on the `Transport Tie-Downs` row.
+   - **Expected:** The row is immediately removed from the DOM.
+6. Submit the form.
+
+**Expected Output:**
+- Serialized JSON includes `Bucket / Blade Attachment` with `"status": "Pass"`.
+- Serialized JSON does **not** include `Transport Tie-Downs` (it was deleted).
+- All other 5 standard items are present.
+
+---
+
+#### E. State Machine & Expected Output (General)
+- **Logistics Record:** `DispatchReturn` record created with transaction ID `TRX-YYYY-XXXX`.
 - **Contract State:** `RentalContract` transitions to `ON_RENT` (or `DISPATCHED`).
-- **Fleet State Machine:** Asset `EQ-CAT-320-001` operational status transitions to `ON_RENT` (Blue Badge).
+- **Fleet State Machine:** Asset operational status transitions to `ON_RENT` (Blue Badge).
 - **Calendar Update:** The event on the Availability Calendar changes color from Yellow to **Blue (`#0d6efd`)**.
 
 ---
+
+
 
 ### Step 11: Equipment Return Inspection, Hour-Meter & Fuel Reconciliation
 
