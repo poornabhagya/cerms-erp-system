@@ -379,6 +379,8 @@
         </div>
     </div>
 </div>
+{% endif %}
+
 {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
 <!-- Delete Quotation Modal -->
 <div class="modal fade" id="deleteQuotationModal" tabindex="-1" aria-labelledby="deleteQuotationModalLabel" aria-hidden="true">
