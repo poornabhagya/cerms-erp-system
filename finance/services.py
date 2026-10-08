@@ -262,11 +262,25 @@ def render_invoice_to_pdf(invoice: Invoice, request=None) -> bytes:
     Renders pixel-perfect A4 Invoice PDF adhering to docs/16_REPORTING_AND_PDF_GUIDELINES.md.
     Uses WeasyPrint with graceful fallback.
     """
+    contract = invoice.contract
+    equipment = None
+    contract_items = []
+    if contract:
+        if hasattr(contract, 'items') and contract.items.exists():
+            contract_items = list(contract.items.select_related('equipment', 'equipment__category').all())
+        if hasattr(contract, 'equipment') and contract.equipment:
+            equipment = contract.equipment
+        elif hasattr(contract, 'primary_equipment') and contract.primary_equipment:
+            equipment = contract.primary_equipment
+        elif contract_items:
+            equipment = contract_items[0].equipment
+
     context = {
         'invoice': invoice,
-        'contract': invoice.contract,
+        'contract': contract,
         'customer': invoice.customer,
-        'equipment': invoice.contract.equipment,
+        'equipment': equipment,
+        'contract_items': contract_items,
         'now': timezone.now(),
         'base_url': request.build_absolute_uri('/') if request else 'http://localhost:8000/',
     }

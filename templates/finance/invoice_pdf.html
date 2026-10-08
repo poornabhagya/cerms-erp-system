@@ -5,11 +5,11 @@
     <title>Tax Invoice {{ invoice.invoice_no }} — CERMS</title>
     <style>
         @page {
-            size: A4;
-            margin: 2cm;
+            size: A4 portrait;
+            margin: 1.2cm 1.4cm 1.4cm 1.4cm;
             @bottom-right {
                 content: "Page " counter(page) " of " counter(pages);
-                font-size: 9pt;
+                font-size: 8.5pt;
                 color: #666666;
             }
             @bottom-left {
@@ -25,9 +25,9 @@
 
         body {
             font-family: 'Helvetica', 'Arial', sans-serif;
-            font-size: 10pt;
-            line-height: 1.4;
-            color: #000000;
+            font-size: 8.5pt;
+            line-height: 1.35;
+            color: #111111;
             background: #ffffff;
             margin: 0;
             padding: 0;
@@ -36,15 +36,30 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
         }
 
-        tr, .keep-together {
+        thead {
+            display: table-header-group;
+        }
+
+        tfoot {
+            display: table-footer-group;
+        }
+
+        tr {
             page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .keep-together, .signature-section, .totals-section, .info-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         h1, h2, h3, h4, .invoice-header {
             page-break-after: avoid;
+            break-after: avoid;
             margin-top: 0;
         }
 
@@ -53,21 +68,21 @@
         }
 
         .company-title {
-            font-size: 18pt;
+            font-size: 16pt;
             font-weight: bold;
             color: #0d6efd;
             letter-spacing: 0.5px;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
         }
 
         .company-subtitle {
-            font-size: 9pt;
-            color: #555555;
-            line-height: 1.3;
+            font-size: 8pt;
+            color: #444444;
+            line-height: 1.25;
         }
 
         .invoice-title {
-            font-size: 18pt;
+            font-size: 16pt;
             font-weight: bold;
             color: #212529;
             text-align: right;
@@ -76,7 +91,8 @@
 
         .meta-box {
             text-align: right;
-            font-size: 9pt;
+            font-size: 8.5pt;
+            line-height: 1.35;
         }
 
         .meta-box strong {
@@ -85,27 +101,31 @@
 
         .divider {
             border-bottom: 2px solid #0d6efd;
-            margin: 15px 0 20px 0;
+            margin: 8px 0 10px 0;
         }
 
         .info-card {
             background-color: #f8f9fa;
             border: 1px solid #dee2e6;
-            padding: 10px;
+            padding: 8px 10px;
             border-radius: 4px;
+            font-size: 8.5pt;
+            line-height: 1.3;
         }
 
         .info-card h4 {
-            font-size: 10pt;
+            font-size: 9pt;
+            font-weight: bold;
             color: #0d6efd;
             border-bottom: 1px solid #dee2e6;
-            padding-bottom: 4px;
-            margin-bottom: 6px;
+            padding-bottom: 3px;
+            margin-bottom: 5px;
             text-transform: uppercase;
         }
 
         .items-table {
-            margin-top: 15px;
+            margin-top: 8px;
+            margin-bottom: 10px;
             border: 1px solid #cccccc;
         }
 
@@ -113,17 +133,18 @@
             background-color: #f1f4f9;
             color: #000000;
             font-weight: bold;
-            font-size: 9pt;
+            font-size: 8.5pt;
             text-align: left;
-            padding: 8px 10px;
+            padding: 6px 8px;
             border-bottom: 1px solid #cccccc;
             text-transform: uppercase;
         }
 
         .items-table td {
-            padding: 8px 10px;
+            padding: 6px 8px;
             border-bottom: 1px solid #eeeeee;
-            font-size: 9.5pt;
+            font-size: 8.5pt;
+            vertical-align: top;
         }
 
         .text-end {
@@ -139,30 +160,30 @@
         }
 
         .totals-table {
-            width: 50%;
-            margin-left: auto;
-            margin-top: 10px;
+            width: 100%;
+            border-collapse: collapse;
         }
 
         .totals-table td {
-            padding: 5px 8px;
-            font-size: 9.5pt;
+            padding: 4px 6px;
+            font-size: 8.5pt;
+            vertical-align: middle;
         }
 
         .totals-table tr.grand-total td {
             background-color: #212529;
             color: #ffffff;
             font-weight: bold;
-            font-size: 11pt;
-            border-top: 2px solid #000000;
+            font-size: 9.5pt;
+            border-top: 1px solid #000000;
         }
 
         .status-badge {
             display: inline-block;
-            padding: 3px 8px;
+            padding: 2px 6px;
             border-radius: 3px;
             font-weight: bold;
-            font-size: 8.5pt;
+            font-size: 8pt;
             text-transform: uppercase;
         }
 
@@ -185,24 +206,28 @@
         }
 
         .footer-note {
-            margin-top: 30px;
-            font-size: 8.5pt;
+            margin-top: 12px;
+            font-size: 7.5pt;
             color: #666666;
             border-top: 1px dashed #cccccc;
-            padding-top: 10px;
+            padding-top: 6px;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .signature-section {
-            margin-top: 40px;
+            margin-top: 25px;
             width: 100%;
+            page-break-inside: avoid;
+            break-inside: avoid;
         }
 
         .signature-box {
             width: 45%;
             border-top: 1px solid #000000;
             text-align: center;
-            font-size: 9pt;
-            padding-top: 5px;
+            font-size: 8.5pt;
+            padding-top: 4px;
         }
     </style>
 </head>
@@ -222,8 +247,8 @@
             </td>
             <td style="width: 45%;">
                 <div class="invoice-title">COMMERCIAL TAX INVOICE</div>
-                <div class="meta-box" style="margin-top: 8px;">
-                    <strong>Invoice No:</strong> <span class="font-mono" style="font-size: 11pt; font-weight: bold; color: #0d6efd;">{{ invoice.invoice_no }}</span><br>
+                <div class="meta-box" style="margin-top: 4px;">
+                    <strong>Invoice No:</strong> <span class="font-mono" style="font-size: 10.5pt; font-weight: bold; color: #0d6efd;">{{ invoice.invoice_no }}</span><br>
                     <strong>Invoice Date:</strong> {{ invoice.invoice_date|date:"Y-m-d" }}<br>
                     <strong>Payment Due Date:</strong> <span style="font-weight: bold; color: #d63384;">{{ invoice.due_date|date:"Y-m-d" }}</span><br>
                     <strong>Contract Ref:</strong> <span class="font-mono">{{ contract.contract_no }}</span><br>
@@ -239,7 +264,7 @@
     <div class="divider"></div>
 
     <!-- Client & Project Site Details -->
-    <table>
+    <table style="width: 100%; margin-bottom: 8px;">
         <tr>
             <td style="width: 48%; vertical-align: top;">
                 <div class="info-card">
@@ -254,8 +279,12 @@
             <td style="width: 48%; vertical-align: top;">
                 <div class="info-card">
                     <h4>Machinery Deployment & Timeline</h4>
+                    {% if equipment %}
                     <strong>Asset Code:</strong> <span class="font-mono">{{ equipment.asset_code }}</span><br>
                     <strong>Machine:</strong> {{ equipment.equipment_name }} ({{ equipment.brand }} {{ equipment.model_number }})<br>
+                    {% elif contract_items %}
+                    <strong>Machinery Assets:</strong> {{ contract_items|length }} Item(s) Deployed<br>
+                    {% endif %}
                     <strong>Project Site:</strong> {{ contract.project_site.project_name }} ({{ contract.project_site.site_address }})<br>
                     <strong>Billing Period:</strong> {{ invoice.billing_period_start|date:"Y-m-d" }} to {{ invoice.billing_period_end|date:"Y-m-d" }}
                 </div>
@@ -267,25 +296,48 @@
     <table class="items-table">
         <thead>
             <tr>
-                <th style="width: 8%;">#</th>
-                <th style="width: 47%;">Description / Commercial Charge</th>
-                <th style="width: 20%;" class="text-center">Basis / Quantity</th>
-                <th style="width: 25%;" class="text-end">Amount (LKR)</th>
+                <th style="width: 6%;">#</th>
+                <th style="width: 49%;">Description / Commercial Charge</th>
+                <th style="width: 23%;" class="text-center">Basis / Quantity</th>
+                <th style="width: 22%;" class="text-end">Amount (LKR)</th>
             </tr>
         </thead>
         <tbody>
-            <tr>
-                <td class="text-center font-mono">01</td>
-                <td>
-                    <strong>Base Machinery Rental Tariff</strong><br>
-                    <small style="color: #666666;">Contract {{ contract.contract_no }} — Rate Tier: {{ contract.get_billing_cycle_display }}</small>
-                </td>
-                <td class="text-center font-mono">Agreed Rate: Rs. {{ contract.agreed_rate|floatformat:2 }}</td>
-                <td class="text-end font-mono">Rs. {{ invoice.rental_subtotal|floatformat:2 }}</td>
-            </tr>
+            {% if contract_items %}
+                {% for item in contract_items %}
+                <tr>
+                    <td class="text-center font-mono">{{ forloop.counter|stringformat:"02d" }}</td>
+                    <td>
+                        <strong>{{ item.equipment.equipment_name }}</strong> (<span class="font-mono">{{ item.equipment.asset_code }}</span>)<br>
+                        <small style="color: #666666;">
+                            Contract {{ contract.contract_no }} &bull; Period: {{ item.start_date|date:"Y-m-d" }} to {{ item.end_date|date:"Y-m-d" }}
+                        </small>
+                    </td>
+                    <td class="text-center font-mono">
+                        {% if item.rate_applied %}
+                            Rate: Rs. {{ item.rate_applied|floatformat:2 }}
+                        {% else %}
+                            Contract Rate
+                        {% endif %}
+                    </td>
+                    <td class="text-end font-mono">Rs. {{ item.subtotal_amount|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td class="text-center font-mono">01</td>
+                    <td>
+                        <strong>Base Machinery Rental Tariff</strong><br>
+                        <small style="color: #666666;">Contract {{ contract.contract_no }} — Rate Tier: {{ contract.get_billing_cycle_display }}</small>
+                    </td>
+                    <td class="text-center font-mono">Agreed Rate: Rs. {{ contract.agreed_rate|floatformat:2 }}</td>
+                    <td class="text-end font-mono">Rs. {{ invoice.rental_subtotal|floatformat:2 }}</td>
+                </tr>
+            {% endif %}
+
             {% if invoice.transport_charges > 0 %}
             <tr>
-                <td class="text-center font-mono">02</td>
+                <td class="text-center font-mono">{% if contract_items %}{{ contract_items|length|add:1|stringformat:"02d" }}{% else %}02{% endif %}</td>
                 <td>
                     <strong>Mobilization & Demobilization Transport</strong><br>
                     <small style="color: #666666;">Round-trip heavy equipment low-bed logistics to project site</small>
@@ -294,9 +346,10 @@
                 <td class="text-end font-mono">Rs. {{ invoice.transport_charges|floatformat:2 }}</td>
             </tr>
             {% endif %}
+
             {% if invoice.excess_hours_charge > 0 %}
             <tr>
-                <td class="text-center font-mono">03</td>
+                <td class="text-center font-mono">{% if contract_items %}{{ contract_items|length|add:2|stringformat:"02d" }}{% else %}03{% endif %}</td>
                 <td>
                     <strong>Excess Machine Operating Hours Tariff</strong><br>
                     <small style="color: #666666;">Operating hours exceeding contractual standard shift allowance</small>
@@ -305,9 +358,10 @@
                 <td class="text-end font-mono">Rs. {{ invoice.excess_hours_charge|floatformat:2 }}</td>
             </tr>
             {% endif %}
+
             {% if invoice.damage_charges > 0 %}
             <tr>
-                <td class="text-center font-mono">04</td>
+                <td class="text-center font-mono">{% if contract_items %}{{ contract_items|length|add:3|stringformat:"02d" }}{% else %}04{% endif %}</td>
                 <td>
                     <strong>Inspection Damage / Maintenance Assessments</strong><br>
                     <small style="color: #666666;">Demobilization return checklist penalties, cleaning, or body repair</small>
@@ -319,12 +373,12 @@
         </tbody>
     </table>
 
-    <!-- Commercial Financial Totals -->
-    <table style="width: 100%;">
+    <!-- Commercial Financial Totals & Settlement Instructions -->
+    <table class="keep-together" style="width: 100%; margin-top: 6px;">
         <tr>
-            <td style="width: 45%; vertical-align: top;">
-                <div class="info-card" style="font-size: 8.5pt;">
-                    <h4 style="font-size: 9pt;">Bank Settlement Instructions</h4>
+            <td style="width: 46%; vertical-align: top;">
+                <div class="info-card" style="font-size: 8pt; line-height: 1.25;">
+                    <h4 style="font-size: 8.5pt;">Bank Settlement Instructions</h4>
                     <strong>Bank Name:</strong> Commercial Bank of Ceylon PLC<br>
                     <strong>Account Name:</strong> CERMS Heavy Equipment Rentals (Pvt) Ltd<br>
                     <strong>Account Number:</strong> 1000-4589-7712<br>
@@ -333,12 +387,12 @@
                     <em>* Please quote Invoice Number <span class="font-mono">{{ invoice.invoice_no }}</span> in wire remarks.</em>
                 </div>
             </td>
-            <td style="width: 5%;"></td>
+            <td style="width: 4%;"></td>
             <td style="width: 50%; vertical-align: top;">
                 <table class="totals-table">
                     <tr>
-                        <td><strong>Taxable Charges Subtotal:</strong></td>
-                        <td class="text-end font-mono">Rs. {{ invoice.rental_subtotal|add:invoice.transport_charges|add:invoice.excess_hours_charge|add:invoice.damage_charges|floatformat:2 }}</td>
+                        <td style="width: 58%;"><strong>Taxable Charges Subtotal:</strong></td>
+                        <td style="width: 42%;" class="text-end font-mono">Rs. {{ invoice.taxable_subtotal|floatformat:2 }}</td>
                     </tr>
                     <tr>
                         <td><strong>Statutory Taxes (18% VAT):</strong></td>

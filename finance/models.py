@@ -137,6 +137,11 @@ class Invoice(TimeStampedModel):
         return f"{self.invoice_no} - {self.customer.company_name} (LKR {self.net_total_payable:,.2f}) [{self.get_status_display()}]"
 
     @property
+    def taxable_subtotal(self) -> Decimal:
+        """Calculates total gross charges before tax and deposit offset."""
+        return self.rental_subtotal + self.transport_charges + self.excess_hours_charge + self.damage_charges
+
+    @property
     def balance_due(self) -> Decimal:
         """Calculates outstanding balance remaining to be paid."""
         return max(Decimal('0.00'), self.net_total_payable - self.paid_amount)
