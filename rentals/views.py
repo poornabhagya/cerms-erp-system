@@ -834,7 +834,7 @@ class ReturnCreateView(RoleRequiredMixin, UpdateView):
     def get_initial(self):
         initial = super().get_initial()
         initial['return_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
-        initial['return_hour_meter'] = self.object.equipment.current_hour_meter
+        initial['return_hour_meter'] = self.object.equipment.current_hour_meter if (self.object and self.object.equipment) else 0.0
         initial['return_fuel_level'] = Decimal('100.00')
         return initial
 

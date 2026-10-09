@@ -54,10 +54,71 @@
     </div>
 </div>
 
-<form method="post">
+<form method="post" id="returnForm">
     {% csrf_token %}
 
     {% crispy form %}
+
+    <!-- Physical Inspection & Return Checklist Dynamic Row Builder -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard2-check text-success me-2"></i> Physical Inspection &amp; Return Checklist</h5>
+                <small class="text-muted">Certify return mechanical condition. Uncheck any item to log a defect &amp; remarks.</small>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-success fw-semibold" id="btnMarkAllPassed">
+                    <i class="bi bi-check2-all me-1"></i> Mark All as Passed
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-success" id="btnAddChecklistRow">
+                    <i class="bi bi-plus-lg me-1"></i> Add Item
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-4">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-2" id="checklistTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 5%;" class="text-center">Pass</th>
+                            <th style="width: 38%;">Inspection Parameter / Component</th>
+                            <th style="width: 47%;">Status / Defect Remarks</th>
+                            <th class="text-center" style="width: 10%;">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="checklistTableBody">
+                        <!-- Dynamic Rows Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Quick suggestion pills -->
+            <div class="d-flex flex-wrap gap-2 align-items-center mt-3 pt-2 border-top">
+                <span class="small text-muted fw-semibold">Quick Suggestions:</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Cabin &amp; Windshield">+ Cabin &amp; Windshield</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Hydraulic Lines &amp; Hoses">+ Hydraulic Lines &amp; Hoses</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Undercarriage / Tracks">+ Undercarriage / Tracks</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Engine &amp; Fluid Levels">+ Engine &amp; Fluid Levels</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Safety Beacon &amp; Alarm">+ Safety Beacon &amp; Alarm</button>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2 small quick-checklist-btn" data-key="Cleaning &amp; Washing">+ Cleaning &amp; Washing</button>
+            </div>
+
+            <!-- Datalist for key suggestions -->
+            <datalist id="commonChecklistKeys">
+                <option value="Cabin &amp; Windshield">
+                <option value="Hydraulic Lines &amp; Hoses">
+                <option value="Undercarriage / Tracks">
+                <option value="Tires &amp; Pressure">
+                <option value="Engine &amp; Fluid Levels">
+                <option value="Safety Beacon &amp; Alarm">
+                <option value="Battery &amp; Electricals">
+                <option value="Cleaning &amp; Washing">
+                <option value="Braking System">
+                <option value="Fire Extinguisher &amp; First Aid">
+                <option value="Operator Manual in Cabin">
+            </datalist>
+        </div>
+    </div>
 
     <div class="card border-0 shadow-sm bg-light p-3 mb-4">
         <div class="d-flex justify-content-between align-items-center">
@@ -74,4 +135,236 @@
     </div>
 </form>
 
+{{ dispatch_record.dispatch_checklist|json_script:"dispatchChecklistData" }}
+
 {% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checklistJsonInput = document.getElementById('id_return_checklist_json') || document.querySelector('input[name="return_checklist"]');
+    const checklistTableBody = document.getElementById('checklistTableBody');
+    const btnAddChecklistRow = document.getElementById('btnAddChecklistRow');
+    const btnMarkAllPassed   = document.getElementById('btnMarkAllPassed');
+    const form = document.getElementById('returnForm') || document.querySelector('form');
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    /**
+     * Creates a checkbox-based inspection row.
+     *  - Checkbox checked   → status "Pass", defect field hidden
+     *  - Checkbox unchecked → status "Fail", red defect remarks field shown
+     */
+    function createChecklistRow(key = '', isPassed = true, remarks = '') {
+        const tr = document.createElement('tr');
+        tr.className = 'checklist-row';
+        if (!isPassed) tr.classList.add('table-danger');
+
+        tr.innerHTML = `
+            <td class="text-center">
+                <div class="form-check d-flex justify-content-center mb-0">
+                    <input class="form-check-input checklist-pass-checkbox fs-5" type="checkbox"
+                           ${isPassed ? 'checked' : ''}
+                           title="Checked = Pass | Unchecked = Fail / Issue">
+                </div>
+            </td>
+            <td>
+                <input type="text"
+                       class="form-control form-control-sm checklist-key-input"
+                       list="commonChecklistKeys"
+                       value="${escapeHtml(key)}"
+                       placeholder="e.g. Hydraulic Lines &amp; Hoses">
+            </td>
+            <td>
+                <div class="checklist-pass-label text-success small fw-semibold ${isPassed ? '' : 'd-none'}">
+                    <i class="bi bi-check-circle-fill me-1"></i> Pass — No Issues
+                </div>
+                <div class="checklist-defect-wrapper ${isPassed ? 'd-none' : ''}">
+                    <input type="text"
+                           class="form-control form-control-sm border-danger checklist-defect-input"
+                           value="${escapeHtml(remarks)}"
+                           placeholder="Describe defect / issue in detail..."
+                           style="background-color:#fff5f5;">
+                </div>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-checklist-row" title="Remove item">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+
+        const checkbox    = tr.querySelector('.checklist-pass-checkbox');
+        const passLabel   = tr.querySelector('.checklist-pass-label');
+        const defectWrap  = tr.querySelector('.checklist-defect-wrapper');
+        const defectInput = tr.querySelector('.checklist-defect-input');
+
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                passLabel.classList.remove('d-none');
+                defectWrap.classList.add('d-none');
+                defectInput.value = '';
+                tr.classList.remove('table-danger');
+            } else {
+                passLabel.classList.add('d-none');
+                defectWrap.classList.remove('d-none');
+                tr.classList.add('table-danger');
+                defectInput.focus();
+            }
+            serializeChecklistToJson();
+        });
+
+        tr.querySelector('.btn-remove-checklist-row').addEventListener('click', function() {
+            tr.remove();
+            serializeChecklistToJson();
+            if (checklistTableBody.children.length === 0) renderEmptyChecklistState();
+        });
+
+        tr.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', serializeChecklistToJson);
+        });
+
+        return tr;
+    }
+
+    function renderEmptyChecklistState() {
+        if (!checklistTableBody) return;
+        checklistTableBody.innerHTML = `
+            <tr id="emptyChecklistRow">
+                <td colspan="4" class="text-center py-3 text-muted">
+                    <small><i class="bi bi-info-circle me-1"></i> No items added. Click <strong>Add Item</strong> or use quick suggestions below.</small>
+                </td>
+            </tr>
+        `;
+    }
+
+    /**
+     * Serialises checklist to JSON and writes to hidden input.
+     * Format: { "Component": { "status": "Pass"|"Fail", "remarks": "..." } }
+     */
+    function serializeChecklistToJson() {
+        if (!checklistTableBody || !checklistJsonInput) return;
+        const checklistObj = {};
+        checklistTableBody.querySelectorAll('.checklist-row').forEach(row => {
+            const key     = row.querySelector('.checklist-key-input')?.value.trim();
+            const passed  = row.querySelector('.checklist-pass-checkbox')?.checked;
+            const remarks = row.querySelector('.checklist-defect-input')?.value.trim() || '';
+            if (key) {
+                checklistObj[key] = {
+                    status:  passed ? 'Pass' : 'Fail',
+                    remarks: passed ? ''     : remarks
+                };
+            }
+        });
+        checklistJsonInput.value = JSON.stringify(checklistObj);
+    }
+
+    function addChecklistRow(key = '', isPassed = true, remarks = '') {
+        const emptyRow = document.getElementById('emptyChecklistRow');
+        if (emptyRow) emptyRow.remove();
+        const tr = createChecklistRow(key, isPassed, remarks);
+        checklistTableBody.appendChild(tr);
+        serializeChecklistToJson();
+        return tr;
+    }
+
+    // ── Initialise rows from existing JSON or dispatch baseline or seed defaults ──
+    let initialChecklist = {};
+    if (checklistJsonInput && checklistJsonInput.value) {
+        try { initialChecklist = JSON.parse(checklistJsonInput.value); }
+        catch (e) { initialChecklist = {}; }
+    }
+
+    const initialKeys = Object.keys(initialChecklist);
+    if (initialKeys.length > 0) {
+        initialKeys.forEach(k => {
+            const entry = initialChecklist[k];
+            if (typeof entry === 'object' && entry !== null) {
+                addChecklistRow(k, entry.status !== 'Fail', entry.remarks || '');
+            } else {
+                const passed = String(entry).toLowerCase() !== 'fail';
+                addChecklistRow(k, passed, passed ? '' : String(entry));
+            }
+        });
+    } else {
+        // Check if baseline dispatch checklist exists
+        let dispatchChecklist = {};
+        const dispatchChecklistEl = document.getElementById('dispatchChecklistData');
+        if (dispatchChecklistEl && dispatchChecklistEl.textContent) {
+            try { dispatchChecklist = JSON.parse(dispatchChecklistEl.textContent); }
+            catch (e) { dispatchChecklist = {}; }
+        }
+
+        const dispatchKeys = Object.keys(dispatchChecklist);
+        if (dispatchKeys.length > 0) {
+            dispatchKeys.forEach(k => {
+                // Populate return checklist with components from dispatch baseline
+                addChecklistRow(k, true, '');
+            });
+        } else {
+            // Default standard return check-in items (all Pass)
+            addChecklistRow('Cabin & Windshield',      true, '');
+            addChecklistRow('Hydraulic Lines & Hoses', true, '');
+            addChecklistRow('Undercarriage / Tracks',  true, '');
+            addChecklistRow('Engine & Fluid Levels',   true, '');
+            addChecklistRow('Safety Beacon & Alarm',   true, '');
+            addChecklistRow('Cleaning & Washing',      true, '');
+        }
+    }
+
+    // ── Add Row ──
+    if (btnAddChecklistRow) {
+        btnAddChecklistRow.addEventListener('click', function() {
+            const tr = addChecklistRow('', true, '');
+            tr.querySelector('.checklist-key-input')?.focus();
+        });
+    }
+
+    // ── Mark All as Passed ──
+    if (btnMarkAllPassed) {
+        btnMarkAllPassed.addEventListener('click', function() {
+            checklistTableBody.querySelectorAll('.checklist-row').forEach(row => {
+                row.querySelector('.checklist-pass-checkbox').checked = true;
+                row.querySelector('.checklist-pass-label').classList.remove('d-none');
+                row.querySelector('.checklist-defect-wrapper').classList.add('d-none');
+                row.querySelector('.checklist-defect-input').value = '';
+                row.classList.remove('table-danger');
+            });
+            serializeChecklistToJson();
+        });
+    }
+
+    // ── Quick suggestion pills ──
+    document.querySelectorAll('.quick-checklist-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const key = this.dataset.key;
+            let exists = false;
+            checklistTableBody.querySelectorAll('.checklist-key-input').forEach(inp => {
+                if (inp.value.trim().toLowerCase() === key.toLowerCase()) {
+                    exists = true;
+                    inp.closest('tr').querySelector('.checklist-pass-checkbox')?.focus();
+                }
+            });
+            if (!exists) {
+                const tr = addChecklistRow(key, true, '');
+                tr.querySelector('.checklist-pass-checkbox')?.focus();
+            }
+        });
+    });
+
+    // ── Final serialize on submit ──
+    if (form) {
+        form.addEventListener('submit', serializeChecklistToJson);
+    }
+});
+</script>
+{% endblock %}
+

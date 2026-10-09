@@ -464,7 +464,18 @@ Performs physical equipment handover from central yard to customer site. Records
 ### Step 11: Equipment Return Inspection, Hour-Meter & Fuel Reconciliation
 
 #### A. Feature Overview & Purpose
-Records equipment return from customer site at the end of the hire period. Compares operating hours against standard contractual thresholds to calculate billable excess overtime hours.
+Records equipment return from customer site at the end of the hire period. Compares operating hours against standard contractual thresholds to calculate billable excess overtime hours. Conducts a structured post-rental physical check-in inspection using an interactive checklist to verify component condition or document damages requiring maintenance.
+
+**Return Checklist UI Features (as of refactored UI):**
+- Each return inspection item features an interactive **Pass checkbox** (checked = Pass, unchecked = Fail).
+- Unchecking a row automatically hides the green "Pass" indicator and expands a **red defect remarks text input** with red row highlight (`table-danger`).
+- **"Mark All as Passed"** button instantly certifies all return checklist rows as Pass and hides defect fields.
+- Quick suggestion pill buttons append common return components (`+ Cabin & Windshield`, `+ Hydraulic Lines & Hoses`, `+ Undercarriage / Tracks`, `+ Engine & Fluid Levels`, `+ Safety Beacon & Alarm`, `+ Cleaning & Washing`) in one click without duplicates.
+- Pre-populates components dynamically from the original dispatch checklist baseline or 6 standard return inspection defaults.
+- Serializes inspection rows to hidden JSON input (`id_return_checklist_json`) as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
+- Preserves the dedicated **"Damage / Defects Reported"** checkbox and **Damage Description & Assessment Notes** textarea to govern whether the asset returns to `AVAILABLE` or escalates to `MAINTENANCE`.
+
+---
 
 #### B. Excess Hour Meter Calculation Logic
 - **Contract Rental Duration:** 10 Days
@@ -479,26 +490,89 @@ Records equipment return from customer site at the end of the hire period. Compa
 
 ---
 
-#### C. Step-by-Step UI Actions
-1. Log in as `ops_officer` or `field_officer`.
-2. Navigate to **Rentals** > **Contracts** > `CNT-2026-0001`.
+#### C. Test Case 11a — Instant All-Passed Return Check-in
+
+**Pre-condition:** Contract `CNT-2026-0001` has active dispatch `TRX-2026-0001` with asset `EQ-CAT-320-001` in `ON_RENT` status.
+
+1. Log in as `ops_officer` (`Staff@CERMS2026!`).
+2. Navigate to **Rentals** > **Contracts** > `CNT-2026-0001` (`/rentals/contracts/CNT-2026-0001/`).
 3. In the Active Dispatches section, click **"Process Equipment Return"** (`/rentals/returns/TRX-2026-0001/`).
-4. Fill in the return handover form:
+4. Fill in the return telemetry header fields:
    - **Return Date & Time:** `2026-11-10 17:00`
    - **Return Hour Meter (hrs):** `1,355.50`
    - **Return Fuel Level (%):** `80.00` *(20% fuel deficit)*
-   - **Return Condition Rating:** `GOOD`
-   - **Damage Noted / Remarks:** `Minor track scratch, normal site wear and tear. No structural damage.`
-   - **Cleanliness Status:** `Cleaned at yard.`
-5. Click **Complete Return Handover**.
+   - **Damage / Defects Reported:** Unchecked (`False`)
+   - **Damage Description & Assessment Notes:** Leave blank
+5. Inspect the Physical Inspection & Return Checklist table:
+   - Verify rows pre-populate with the 6 standard items, all checkboxes checked (Pass).
+   - Click the **"Mark All as Passed"** button.
+   - **Expected:** All checkboxes remain checked; green "Pass — No Issues" indicators remain visible; defect textboxes remain hidden.
+6. Click **"Certify Equipment Return Check-in"**.
 
-#### C. State Machine & Expected Output
+**Expected Output:**
+- `hours_operated` stored as `105.50 hrs`.
+- `excess_hours_calculated` stored as `25.50 hrs`.
+- `RentalContract` status transitions to `RETURNED`.
+- `Equipment` asset `EQ-CAT-320-001` hour meter updates to `1,355.50 hrs` and status reverts to **`AVAILABLE`** (Green Badge).
+- `return_checklist` JSON in database: all items show `"status": "Pass"` and `"remarks": ""`.
+- UI Alert: Success message: *"Equipment 'EQ-CAT-320-001' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
+
+---
+
+#### D. Test Case 11b — Defect & Damage Logging upon Return
+
+1. Navigate to the return form for an active transaction (or reset test contract).
+2. Enter valid closing telemetry:
+   - **Return Hour Meter:** `1,355.50`
+   - **Return Fuel Level:** `80.00`
+3. On the Return Checklist table, **uncheck** the checkbox for `Hydraulic Lines & Hoses`.
+   - **Expected:** Checkbox unchecks, the green "Pass" label hides, and a red-bordered defect remarks input expands. The row turns red (`table-danger`).
+4. Enter defect remarks: `Pinhole oil leak detected on secondary boom hydraulic hose`.
+5. Check the formal **"Damage / Defects Reported"** checkbox (`True`).
+6. In **Damage Description & Assessment Notes**, enter: `Hydraulic leak on secondary boom line requiring workshop seal kit replacement and pressure testing`.
+7. Click **"Certify Equipment Return Check-in"**.
+
+**Expected Output:**
+- Form validates and submits successfully.
+- `return_checklist` JSON contains:
+  ```json
+  {
+    "Cabin & Windshield":      { "status": "Pass", "remarks": "" },
+    "Hydraulic Lines & Hoses": { "status": "Fail", "remarks": "Pinhole oil leak detected on secondary boom hydraulic hose" },
+    "Undercarriage / Tracks":  { "status": "Pass", "remarks": "" },
+    "Engine & Fluid Levels":   { "status": "Pass", "remarks": "" },
+    "Safety Beacon & Alarm":   { "status": "Pass", "remarks": "" },
+    "Cleaning & Washing":      { "status": "Pass", "remarks": "" }
+  }
+  ```
+- Because `damage_reported=True`, `Equipment` asset `EQ-CAT-320-001` status transitions to **`MAINTENANCE`** (Orange/Red Badge), preventing immediate re-hiring until repaired.
+- `RentalContract` status transitions to `RETURNED`.
+
+---
+
+#### E. Test Case 11c — Dynamic Item Addition & Quick Suggestion Pills
+
+1. On the return form, click the pill button **"+ Cleaning & Washing"**.
+   - **Expected:** If already present, duplicates are prevented and focus moves to the existing row's checkbox.
+2. Click **"+ Add Item"** button.
+   - **Expected:** A new blank row appends with input focus on the component field.
+3. Type `Ground Engaging Tools (Bucket Teeth)` in the component field.
+4. Leave checkbox checked (Pass) or uncheck to report worn teeth with remarks.
+5. Click the 🗑️ **trash icon** on any row to delete it from the table.
+   - **Expected:** The row is immediately removed from the DOM and serialized JSON excludes it.
+6. Submit the form and verify database JSON reflects the custom items accurately.
+
+---
+
+#### F. State Machine & Expected Output (General)
 - **Logistics Calculations:** 
   - `hours_operated` stored as `105.50 hrs`.
   - `excess_hours_calculated` stored as `25.50 hrs`.
 - **Contract State:** `RentalContract` transitions to `RETURNED`.
-- **Fleet State Machine:** Asset `EQ-CAT-320-001` current hour meter updates to `1,355.50 hrs` and status reverts to `AVAILABLE` (or `MAINTENANCE` if damaged).
-- **UI Alert:** Success message: *"Equipment 'EQ-CAT-320-001' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
+- **Fleet State Machine:** Asset current hour meter updates to `1,355.50 hrs`. Status becomes:
+  - **`AVAILABLE`** if `damage_reported == False`
+  - **`MAINTENANCE`** if `damage_reported == True`
+- **UI Alert:** Success message: *"Equipment '<asset_code>' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
 
 ---
 

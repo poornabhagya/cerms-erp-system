@@ -1137,4 +1137,44 @@ class DispatchCreateViewTestCase(SimpleTestCase):
         self.assertEqual(context.get('contract'), mock_contract)
 
 
+class ReturnFormTestCase(SimpleTestCase):
+    """Unit tests for ReturnForm and ReturnCreateView interactive checklist integration."""
+
+    def test_return_form_checklist_widget_is_hidden_input(self):
+        from django import forms
+        from rentals.forms import ReturnForm
+
+        form = ReturnForm()
+        self.assertIsInstance(form.fields['return_checklist'].widget, forms.HiddenInput)
+        self.assertEqual(form.fields['return_checklist'].widget.attrs.get('id'), 'id_return_checklist_json')
+        self.assertFalse(form.fields['return_checklist'].required)
+
+    def test_return_form_clean_valid_json_checklist(self):
+        from rentals.forms import ReturnForm
+        data = {
+            'return_datetime': '2026-11-10T17:00',
+            'return_hour_meter': '1355.5',
+            'return_fuel_level': '80',
+            'damage_reported': False,
+            'damage_notes': '',
+            'return_checklist': '{"Cabin & Windshield": {"status": "Pass", "remarks": ""}}',
+        }
+        form = ReturnForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['return_checklist'], {"Cabin & Windshield": {"status": "Pass", "remarks": ""}})
+
+    def test_return_create_view_get_initial_safe(self):
+        from unittest.mock import MagicMock
+        from rentals.views import ReturnCreateView
+
+        view = ReturnCreateView()
+        view.object = MagicMock()
+        view.object.equipment = MagicMock(current_hour_meter=Decimal('1250.00'))
+
+        initial = view.get_initial()
+        self.assertEqual(initial['return_hour_meter'], Decimal('1250.00'))
+        self.assertEqual(initial['return_fuel_level'], Decimal('100.00'))
+
+
+
 

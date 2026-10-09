@@ -557,14 +557,15 @@ class ReturnForm(forms.ModelForm):
         ]
         widgets = {
             'return_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
-            'return_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0'}),
-            'return_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100'}),
-            'damage_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Detailed description of damages, broken teeth, hydraulic leaks...'}),
-            'return_checklist': forms.Textarea(attrs={'rows': 3, 'placeholder': '{"tires": "pass", "hydraulics": "pass", "damage_check": "complete"}'}),
+            'return_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control'}),
+            'return_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'class': 'form-control', 'placeholder': 'Percentage 0-100%'}),
+            'damage_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Detailed description of damages, broken teeth, hydraulic leaks...', 'class': 'form-control'}),
+            'return_checklist': forms.HiddenInput(attrs={'id': 'id_return_checklist_json'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['return_checklist'].required = False
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -581,9 +582,7 @@ class ReturnForm(forms.ModelForm):
                 Row(
                     Column('damage_notes', css_class='col-12 mb-3'),
                 ),
-                Row(
-                    Column('return_checklist', css_class='col-12 mb-3'),
-                ),
+                Field('return_checklist'),
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
