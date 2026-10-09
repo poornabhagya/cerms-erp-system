@@ -1047,3 +1047,94 @@ class QuotationDeletionSecurityTests(TestCase):
         self.assertTrue(Quotation.objects.filter(quotation_no='QT-2026-8890').exists())
 
 
+from django.test import SimpleTestCase
+
+
+class DispatchCreateViewTestCase(SimpleTestCase):
+    """Unit tests for DispatchCreateView safe equipment handling."""
+
+    def test_dispatch_create_view_with_none_equipment_redirects_and_messages(self):
+        from unittest.mock import MagicMock, patch
+        from rentals.views import DispatchCreateView
+        from django.test import RequestFactory
+        from django.contrib.messages.storage.fallback import FallbackStorage
+
+        factory = RequestFactory()
+        req = factory.get('/rentals/contracts/CNT-2026-TEST/dispatch/')
+        req.user = MagicMock(is_authenticated=True, role='OPERATIONS_OFFICER', is_superuser=False)
+        setattr(req, 'session', 'session')
+        messages = FallbackStorage(req)
+        setattr(req, '_messages', messages)
+
+        mock_contract = MagicMock()
+        mock_contract.contract_no = 'CNT-2026-TEST'
+        mock_contract.equipment = None
+
+        view = DispatchCreateView()
+        with patch('rentals.views.get_object_or_404', return_value=mock_contract):
+            response = view.dispatch(req, contract_no='CNT-2026-TEST')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, '/rentals/contracts/CNT-2026-TEST/')
+        msg_texts = [str(m) for m in messages]
+        self.assertIn("No equipment assigned to this contract for dispatch.", msg_texts)
+
+    def test_dispatch_create_view_get_initial_safe_when_no_equipment(self):
+        from unittest.mock import MagicMock, patch
+        from rentals.views import DispatchCreateView
+
+        mock_contract = MagicMock()
+        mock_contract.contract_no = 'CNT-2026-TEST'
+        mock_contract.equipment = None
+
+        view = DispatchCreateView()
+        view.kwargs = {'contract_no': 'CNT-2026-TEST'}
+        with patch('rentals.views.get_object_or_404', return_value=mock_contract), \
+             patch('rentals.views.DispatchReturn.objects.filter') as mock_dr:
+            mock_dr.return_value.count.return_value = 0
+            initial = view.get_initial()
+
+        self.assertEqual(initial.get('dispatch_hour_meter'), 0.0)
+        self.assertIsNone(initial.get('equipment'))
+
+    def test_dispatch_create_view_get_initial_with_equipment(self):
+        from unittest.mock import MagicMock, patch
+        from rentals.views import DispatchCreateView
+
+        mock_contract = MagicMock()
+        mock_contract.contract_no = 'CNT-2026-TEST'
+        mock_contract.equipment = MagicMock(current_hour_meter=Decimal('450.00'))
+
+        view = DispatchCreateView()
+        view.kwargs = {'contract_no': 'CNT-2026-TEST'}
+        with patch('rentals.views.get_object_or_404', return_value=mock_contract), \
+             patch('rentals.views.DispatchReturn.objects.filter') as mock_dr:
+            mock_dr.return_value.count.return_value = 0
+            initial = view.get_initial()
+
+        self.assertEqual(initial.get('dispatch_hour_meter'), Decimal('450.00'))
+        self.assertEqual(initial.get('equipment'), mock_contract.equipment)
+
+    def test_dispatch_create_view_get_context_data_safe_when_no_equipment(self):
+        from unittest.mock import MagicMock, patch
+        from rentals.views import DispatchCreateView
+
+        mock_contract = MagicMock()
+        mock_contract.contract_no = 'CNT-2026-TEST'
+        mock_contract.equipment = None
+
+        view = DispatchCreateView()
+        view.request = MagicMock()
+        view.object = None
+        view.kwargs = {'contract_no': 'CNT-2026-TEST'}
+        with patch('rentals.views.get_object_or_404', return_value=mock_contract), \
+             patch('rentals.views.DispatchReturn.objects.filter') as mock_dr, \
+             patch('rentals.forms.DispatchForm'):
+            mock_dr.return_value.count.return_value = 0
+            context = view.get_context_data()
+
+        self.assertIsNone(context.get('equipment'))
+        self.assertEqual(context.get('contract'), mock_contract)
+
+
+

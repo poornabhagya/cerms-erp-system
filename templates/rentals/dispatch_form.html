@@ -46,8 +46,13 @@
         </div>
         <div class="col-12 col-md-3">
             <small class="text-muted text-uppercase fw-bold d-block">Assigned Machine Asset</small>
+            {% if contract.equipment %}
             <span class="badge bg-dark font-monospace me-1">{{ contract.equipment.asset_code }}</span>
             <span class="small fw-semibold">{{ contract.equipment.equipment_name }}</span>
+            {% else %}
+            <span class="badge bg-secondary font-monospace me-1">None</span>
+            <span class="small text-muted">No equipment assigned</span>
+            {% endif %}
         </div>
     </div>
 </div>

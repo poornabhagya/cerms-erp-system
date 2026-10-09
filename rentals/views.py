@@ -753,14 +753,26 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
         User.Role.ADMINISTRATOR,
     )
 
+    def dispatch(self, request, *args, **kwargs):
+        contract_no = kwargs.get('contract_no') or getattr(self, 'kwargs', {}).get('contract_no')
+        if contract_no:
+            contract = get_object_or_404(RentalContract, contract_no=contract_no)
+            if not contract.equipment:
+                messages.error(request, "No equipment assigned to this contract for dispatch.")
+                return redirect('rentals:contract_detail', contract_no=contract.contract_no)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_initial(self):
         initial = super().get_initial()
         contract_no = self.kwargs.get('contract_no')
         if contract_no:
             contract = get_object_or_404(RentalContract, contract_no=contract_no)
             initial['contract'] = contract
-            initial['equipment'] = contract.equipment
-            initial['dispatch_hour_meter'] = contract.equipment.current_hour_meter
+            initial['equipment'] = contract.equipment if contract else None
+            if contract and contract.equipment:
+                initial['dispatch_hour_meter'] = contract.equipment.current_hour_meter
+            else:
+                initial['dispatch_hour_meter'] = 0.0
             initial['dispatch_fuel_level'] = Decimal('100.00')
             initial['dispatch_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
 
@@ -773,12 +785,19 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         contract_no = self.kwargs.get('contract_no')
-        context['contract'] = get_object_or_404(RentalContract, contract_no=contract_no)
+        if contract_no:
+            contract = get_object_or_404(RentalContract, contract_no=contract_no)
+            context['contract'] = contract
+            context['equipment'] = contract.equipment if contract else None
         return context
 
     def form_valid(self, form):
         contract_no = self.kwargs.get('contract_no')
         contract = get_object_or_404(RentalContract, contract_no=contract_no)
+
+        if not contract.equipment:
+            messages.error(self.request, "No equipment assigned to this contract for dispatch.")
+            return redirect('rentals:contract_detail', contract_no=contract.contract_no)
 
         dispatch_data = {
             'dispatch_datetime': form.cleaned_data['dispatch_datetime'],
@@ -789,7 +808,8 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
 
         try:
             record = process_equipment_dispatch(contract.contract_no, dispatch_data, user=self.request.user)
-            messages.success(self.request, f"Equipment '{contract.equipment.asset_code}' successfully dispatched under Transaction {record.transaction_id}.")
+            asset_code = contract.equipment.asset_code if contract.equipment else (record.equipment.asset_code if record.equipment else 'N/A')
+            messages.success(self.request, f"Equipment '{asset_code}' successfully dispatched under Transaction {record.transaction_id}.")
             return redirect('rentals:contract_detail', contract_no=contract.contract_no)
         except ValidationError as e:
             messages.error(self.request, str(e))
