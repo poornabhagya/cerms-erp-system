@@ -778,6 +778,36 @@ class RentalContract(TimeStampedModel):
         eq_name = self.equipment.asset_code if self.equipment else f"{self.items.count()} items"
         return f"{self.contract_no} - {self.customer.company_name} ({eq_name})"
 
+    @property
+    def assigned_equipment_list(self):
+        """
+        Returns list of Equipment objects assigned to this contract,
+        deriving from RentalContractItem records or falling back to self.equipment.
+        """
+        items_equipment = [item.equipment for item in self.items.select_related('equipment', 'equipment__category').all()]
+        if items_equipment:
+            return items_equipment
+        if self.equipment:
+            return [self.equipment]
+        return []
+
+    @property
+    def active_dispatches(self):
+        """
+        Returns QuerySet of DispatchReturn records currently on site (not yet returned).
+        """
+        return self.dispatch_returns.filter(return_datetime__isnull=True).select_related('equipment', 'dispatch_officer')
+
+    @property
+    def total_subtotal(self) -> Decimal:
+        """
+        Returns sum of line items subtotal or contract agreed rate * days.
+        """
+        items = self.items.all()
+        if items.exists():
+            return sum((item.subtotal_amount for item in items), Decimal('0.00'))
+        return self.agreed_rate
+
 
 class RentalContractItem(TimeStampedModel):
     """
@@ -843,6 +873,20 @@ class RentalContractItem(TimeStampedModel):
 
     def calculate_subtotal(self) -> Decimal:
         return (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00'))).quantize(Decimal('0.01'))
+
+    @property
+    def active_dispatch(self):
+        """
+        Returns the active (not yet returned) DispatchReturn record for this specific equipment, if any.
+        """
+        return self.contract.dispatch_returns.filter(equipment=self.equipment, return_datetime__isnull=True).order_by('-dispatch_datetime').first()
+
+    @property
+    def is_dispatched(self) -> bool:
+        """
+        Returns True if this equipment asset is currently active on site (dispatched and not returned).
+        """
+        return self.contract.dispatch_returns.filter(equipment=self.equipment, return_datetime__isnull=True).exists()
 
     def save(self, *args, **kwargs):
         if self.subtotal_amount is None or self.subtotal_amount == Decimal('0.00'):

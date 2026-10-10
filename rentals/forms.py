@@ -510,36 +510,26 @@ class DispatchForm(forms.ModelForm):
         ]
         widgets = {
             'transaction_id': forms.TextInput(attrs={'class': 'form-control font-monospace', 'readonly': 'readonly'}),
-            'contract': forms.Select(attrs={'class': 'form-select', 'id': 'id_contract'}),
-            'equipment': forms.Select(attrs={'class': 'form-select', 'id': 'id_equipment'}),
-            'dispatch_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control', 'id': 'id_dispatch_datetime'}),
-            'dispatch_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control', 'id': 'id_dispatch_hour_meter'}),
-            'dispatch_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'placeholder': 'Percentage 0-100%', 'class': 'form-control', 'id': 'id_dispatch_fuel_level'}),
+            'dispatch_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
+            'dispatch_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control'}),
+            'dispatch_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'placeholder': 'Percentage 0-100%', 'class': 'form-control'}),
             'dispatch_checklist': forms.HiddenInput(attrs={'id': 'id_dispatch_checklist_json'}),
         }
 
-    def __init__(self, *args, **kwargs):
-        contract = kwargs.pop('contract', None)
+    def __init__(self, *args, contract=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.contract = contract or (self.initial.get('contract') if hasattr(self, 'initial') else None)
         self.fields['dispatch_checklist'].required = False
+        self.fields['contract'].widget.attrs.update({'class': 'form-select'})
+        self.fields['equipment'].widget.attrs.update({'class': 'form-select', 'id': 'id_equipment'})
 
-        if contract:
-            if isinstance(contract, str):
-                try:
-                    contract = RentalContract.objects.get(contract_no=contract)
-                except RentalContract.DoesNotExist:
-                    contract = None
-            if contract:
-                self.fields['contract'].initial = contract
-                eq_ids = list(contract.items.values_list('equipment_id', flat=True))
-                if contract.equipment_id and contract.equipment_id not in eq_ids:
-                    eq_ids.append(contract.equipment_id)
-                if eq_ids:
-                    self.fields['equipment'].queryset = Equipment.objects.filter(pk__in=eq_ids)
+        if self.contract:
+            assigned_eq = self.contract.assigned_equipment_list
+            if assigned_eq:
+                assigned_pks = [eq.pk for eq in assigned_eq]
+                self.fields['equipment'].queryset = Equipment.objects.filter(pk__in=assigned_pks)
 
-        self.fields['equipment'].label_from_instance = (
-            lambda obj: f"{obj.asset_code} — {obj.equipment_name} (Current Meter: {obj.current_hour_meter} hrs)"
-        )
+        self.fields['equipment'].label_from_instance = lambda obj: f"{obj.asset_code} — {obj.equipment_name} ({obj.get_status_display()})"
 
         self.helper = FormHelper()
         self.helper.form_tag = False

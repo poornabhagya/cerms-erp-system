@@ -1409,5 +1409,245 @@ class QuotationMaintenanceSoftWarningTestCase(TestCase):
         self.assertEqual(quote.approved_by, self.manager_user)
 
 
+class MultiAssetQuotationToContractTestCase(TestCase):
+    """
+    Test suite for multi-asset quotation conversion to contract,
+    multi-asset display on contract detail page, individual equipment dispatch,
+    and partial return lifecycle.
+    """
+
+    def setUp(self):
+        self.ops_user = User.objects.create_user(
+            username="yard_ops",
+            email="ops@cerms.lk",
+            password="testpassword",
+            role=User.Role.OPERATIONS_OFFICER
+        )
+        self.rental_officer = User.objects.create_user(
+            username="rental_rep",
+            email="rep@cerms.lk",
+            password="testpassword",
+            role=User.Role.RENTAL_OFFICER
+        )
+
+        self.customer = Customer.objects.create(
+            customer_code="CUST-MULTI-01",
+            company_name="Mega Builders Ltd",
+            contact_person="Ravi Silva",
+            phone="+94770001122",
+            email="ravi@megabuilders.lk",
+            billing_address="Colombo Yard",
+            credit_limit=Decimal("5000000.00"),
+            status=Customer.Status.ACTIVE
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-MULTI-01",
+            customer=self.customer,
+            project_name="Port City Highway",
+            site_address="Colombo Port City",
+            status=ProjectSite.Status.ACTIVE
+        )
+
+        self.category = Category.objects.create(name="Earthmoving", description="Excavators and Loaders")
+
+        self.eq1 = Equipment.objects.create(
+            asset_code="EXC-2026-001",
+            equipment_name="CAT 320D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT-SN-001",
+            manufacture_year=2024,
+            purchase_cost=Decimal("35000000.00"),
+            purchase_date=date(2024, 1, 15),
+            current_hour_meter=Decimal("120.5"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        self.eq2 = Equipment.objects.create(
+            asset_code="EXC-2026-002",
+            equipment_name="Komatsu PC200 Excavator",
+            category=self.category,
+            brand="Komatsu",
+            model_number="PC200-8",
+            serial_number="KOM-SN-002",
+            manufacture_year=2024,
+            purchase_cost=Decimal("32000000.00"),
+            purchase_date=date(2024, 2, 1),
+            current_hour_meter=Decimal("340.0"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # Create multi-item quotation
+        self.quotation = Quotation.objects.create(
+            quotation_no="QT-MULTI-2026-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            security_deposit_required=Decimal("100000.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+
+        QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.eq1,
+            rate_applied=Decimal("25000.00"),
+            subtotal_amount=Decimal("250000.00")
+        )
+
+        QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.eq2,
+            rate_applied=Decimal("30000.00"),
+            subtotal_amount=Decimal("300000.00")
+        )
+
+    def test_multi_asset_quotation_conversion(self):
+        """Converts multi-item quotation into single contract with multiple contract items."""
+        contract = convert_quotation_to_contract(self.quotation.quotation_no, user=self.rental_officer)
+
+        self.assertEqual(contract.items.count(), 2)
+        self.assertEqual(len(contract.assigned_equipment_list), 2)
+        self.assertIn(self.eq1, contract.assigned_equipment_list)
+        self.assertIn(self.eq2, contract.assigned_equipment_list)
+
+        # Both equipment assets transitioned to RESERVED
+        self.eq1.refresh_from_db()
+        self.eq2.refresh_from_db()
+        self.assertEqual(self.eq1.status, Equipment.Status.RESERVED)
+        self.assertEqual(self.eq2.status, Equipment.Status.RESERVED)
+
+    def test_contract_detail_view_displays_all_assets(self):
+        """Contract detail page renders all equipment assets and provides can_dispatch=True."""
+        contract = convert_quotation_to_contract(self.quotation.quotation_no, user=self.rental_officer)
+
+        self.client.force_login(self.rental_officer)
+        response = self.client.get(f'/rentals/contracts/{contract.contract_no}/')
+        self.assertEqual(response.status_code, 200)
+
+        # Context contains contract items and undispatched assets
+        self.assertEqual(response.context['contract_items'].count(), 2)
+        self.assertEqual(len(response.context['undispatched_equipment']), 2)
+        self.assertTrue(response.context['can_dispatch'])
+
+        # HTML content shows both machines
+        content = response.content.decode('utf-8')
+        self.assertIn("EXC-2026-001", content)
+        self.assertIn("EXC-2026-002", content)
+        self.assertIn("CAT 320D Excavator", content)
+        self.assertIn("Komatsu PC200 Excavator", content)
+
+    def test_sequential_dispatch_and_return_lifecycle(self):
+        """Test dispatching first asset, verifying contract remains dispatchable for 2nd asset, and return logic."""
+        from django.utils import timezone
+        contract = convert_quotation_to_contract(self.quotation.quotation_no, user=self.rental_officer)
+
+        self.client.force_login(self.ops_user)
+
+        # 1. Dispatch first asset (eq1)
+        dispatch1_response = self.client.post(
+            f'/rentals/contracts/{contract.contract_no}/dispatch/',
+            {
+                'transaction_id': 'TRX-2026-9001',
+                'contract': contract.pk,
+                'equipment': self.eq1.pk,
+                'dispatch_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M'),
+                'dispatch_hour_meter': '125.0',
+                'dispatch_fuel_level': '85.00',
+                'dispatch_checklist': '{}'
+            }
+        )
+        self.assertEqual(dispatch1_response.status_code, 302)
+
+        contract.refresh_from_db()
+        self.eq1.refresh_from_db()
+        self.eq2.refresh_from_db()
+
+        self.assertEqual(self.eq1.status, Equipment.Status.ON_RENT)
+        self.assertEqual(self.eq2.status, Equipment.Status.RESERVED)
+        self.assertEqual(contract.status, RentalContract.Status.ON_RENT)
+
+        # 2. View contract detail: can_dispatch MUST still be True for remaining asset!
+        detail_response = self.client.get(f'/rentals/contracts/{contract.contract_no}/')
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertTrue(detail_response.context['can_dispatch'])
+        self.assertEqual(len(detail_response.context['undispatched_equipment']), 1)
+        self.assertEqual(detail_response.context['undispatched_equipment'][0], self.eq2)
+
+        # 3. Dispatch second asset (eq2)
+        dispatch2_response = self.client.post(
+            f'/rentals/contracts/{contract.contract_no}/dispatch/',
+            {
+                'transaction_id': 'TRX-2026-9002',
+                'contract': contract.pk,
+                'equipment': self.eq2.pk,
+                'dispatch_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M'),
+                'dispatch_hour_meter': '342.0',
+                'dispatch_fuel_level': '90.00',
+                'dispatch_checklist': '{}'
+            }
+        )
+        self.assertEqual(dispatch2_response.status_code, 302)
+
+        self.eq2.refresh_from_db()
+        self.assertEqual(self.eq2.status, Equipment.Status.ON_RENT)
+
+        # Detail view: all assets dispatched, can_dispatch is False, can_return is True
+        detail_response2 = self.client.get(f'/rentals/contracts/{contract.contract_no}/')
+        self.assertFalse(detail_response2.context['can_dispatch'])
+        self.assertTrue(detail_response2.context['can_return'])
+        self.assertEqual(detail_response2.context['active_dispatches'].count(), 2)
+
+        # 4. Return first asset (eq1)
+        trx1 = DispatchReturn.objects.filter(contract=contract, equipment=self.eq1).first()
+        self.assertIsNotNone(trx1)
+        return1_response = self.client.post(
+            f'/rentals/returns/{trx1.transaction_id}/',
+            {
+                'return_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M'),
+                'return_hour_meter': '150.0',
+                'return_fuel_level': '80.00',
+                'damage_reported': False,
+                'damage_notes': '',
+                'return_checklist': '{}'
+            }
+        )
+        self.assertEqual(return1_response.status_code, 302)
+
+        contract.refresh_from_db()
+        self.eq1.refresh_from_db()
+        self.eq2.refresh_from_db()
+
+        self.assertEqual(self.eq1.status, Equipment.Status.AVAILABLE)
+        self.assertEqual(self.eq2.status, Equipment.Status.ON_RENT)
+        # Contract MUST REMAIN ON_RENT because eq2 is still on site!
+        self.assertEqual(contract.status, RentalContract.Status.ON_RENT)
+
+        # 5. Return second asset (eq2)
+        trx2 = DispatchReturn.objects.filter(contract=contract, equipment=self.eq2).first()
+        self.assertIsNotNone(trx2)
+        return2_response = self.client.post(
+            f'/rentals/returns/{trx2.transaction_id}/',
+            {
+                'return_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M'),
+                'return_hour_meter': '365.0',
+                'return_fuel_level': '85.00',
+                'damage_reported': False,
+                'damage_notes': '',
+                'return_checklist': '{}'
+            }
+        )
+        self.assertEqual(return2_response.status_code, 302)
+
+        contract.refresh_from_db()
+        self.eq2.refresh_from_db()
+
+        self.assertEqual(self.eq2.status, Equipment.Status.AVAILABLE)
+        # All equipment returned -> Contract status is RETURNED!
+        self.assertEqual(contract.status, RentalContract.Status.RETURNED)
+
+
 
 
