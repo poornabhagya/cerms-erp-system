@@ -150,6 +150,11 @@
                             {% else %}
                                 <span class="badge bg-secondary">Inactive</span>
                             {% endif %}
+                            {% if eq.has_minor_damage %}
+                                <span class="badge bg-warning text-dark ms-1" title="{{ eq.minor_damage_notes|default:'Minor damage reported' }}">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Minor Damage
+                                </span>
+                            {% endif %}
                         </td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">

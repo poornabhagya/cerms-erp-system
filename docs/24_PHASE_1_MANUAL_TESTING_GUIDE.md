@@ -373,7 +373,14 @@ Validates visual scheduling, conflict detection, and color-coded event rendering
 ### Step 10: Equipment Dispatch Certification & Physical Inspection
 
 #### A. Feature Overview & Purpose
-Performs physical equipment handover from central yard to customer site. Records initial hour meters, fuel levels, and a structured per-component inspection checklist with Pass/Fail status and defect remarks. Transitions asset state to `ON_RENT` on successful submission.
+Performs physical equipment handover from central yard to customer site. Records initial hour meters, fuel levels, pre-existing damage inspection, and a structured per-component inspection checklist with Pass/Fail status and defect remarks. Transitions asset state to `ON_RENT` on successful submission.
+
+**Pre-existing Damage Display & Damage Gating:**
+- **Pre-existing Damage Alert:** If the selected equipment has unresolved minor damage from previous rentals, a prominent top banner dynamically displays: `Unresolved Previous Damages: [Damage Notes]` to establish baseline machine conditions before departure.
+- **Two Distinct Damage Checkboxes:**
+  1. `Log Minor Damage / Defect` (`has_minor_damage`): Documents pre-existing or mobilization cosmetic issues.
+  2. `Require Maintenance / Ground Asset` (`requires_maintenance`): Flags critical pre-dispatch safety issues, grounding the asset to `MAINTENANCE` and preventing departure.
+- **Dynamic Damage Notes Textarea:** The "Damage Description & Assessment Notes" textarea is completely hidden by default and expands via vanilla JS only if either checkbox is checked.
 
 **Checklist UI Features (as of refactored UI):**
 - Each inspection item has a **Pass checkbox** (checked = Pass, unchecked = Fail).
@@ -381,6 +388,7 @@ Performs physical equipment handover from central yard to customer site. Records
 - **"Mark All as Passed"** button instantly sets all rows to Pass and hides all defect fields.
 - Quick pill buttons append pre-named rows in one click.
 - JSON serialized as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
+- Checklist failures act solely as condition audit logs and do not block dispatch unless explicit maintenance is required.
 
 ---
 
@@ -464,10 +472,17 @@ Performs physical equipment handover from central yard to customer site. Records
 
 
 
-### Step 11: Equipment Return Inspection, Hour-Meter & Fuel Reconciliation
+### Step 11: Equipment Return Inspection, Bifurcated Damage & Decoupled Maintenance
 
 #### A. Feature Overview & Purpose
-Records equipment return from customer site at the end of the hire period. Compares operating hours against standard contractual thresholds to calculate billable excess overtime hours. Conducts a structured post-rental physical check-in inspection using an interactive checklist to verify component condition or document damages requiring maintenance.
+Records equipment return from customer site at the end of the hire period. Compares operating hours against standard contractual thresholds to calculate billable excess overtime hours. Conducts a structured post-rental physical check-in inspection using an interactive checklist and decoupled damage routing.
+
+**Bifurcated Damage Architecture (Return):**
+- **Two Distinct Checkboxes:**
+  1. `Log Minor Damage / Defect` (`has_minor_damage`): For minor cosmetic defects (scratches, paint chips). The equipment transitions back to **`AVAILABLE`** (eligible for immediate future hiring) and displays persistent dual status badges (`[AVAILABLE]` + `[MINOR DAMAGE]`).
+  2. `Require Maintenance / Ground Asset` (`requires_maintenance`): For severe mechanical/safety issues. Transitions equipment directly to **`MAINTENANCE`**, grounding the asset until workshop repair.
+- **Dynamic Damage Notes Textarea:** Completely hidden by default; revealed via vanilla JS only if either checkbox is checked.
+- **Checklist Independence:** Component failure in the JSON checklist does NOT automatically trigger `MAINTENANCE`. It acts purely as a condition audit log.
 
 **Return Checklist UI Features (as of refactored UI):**
 - Each return inspection item features an interactive **Pass checkbox** (checked = Pass, unchecked = Fail).
@@ -476,7 +491,6 @@ Records equipment return from customer site at the end of the hire period. Compa
 - Quick suggestion pill buttons append common return components (`+ Cabin & Windshield`, `+ Hydraulic Lines & Hoses`, `+ Undercarriage / Tracks`, `+ Engine & Fluid Levels`, `+ Safety Beacon & Alarm`, `+ Cleaning & Washing`) in one click without duplicates.
 - Pre-populates components dynamically from the original dispatch checklist baseline or 6 standard return inspection defaults.
 - Serializes inspection rows to hidden JSON input (`id_return_checklist_json`) as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
-- Preserves the dedicated **"Damage / Defects Reported"** checkbox and **Damage Description & Assessment Notes** textarea to govern whether the asset returns to `AVAILABLE` or escalates to `MAINTENANCE`.
 
 ---
 
@@ -493,7 +507,7 @@ Records equipment return from customer site at the end of the hire period. Compa
 
 ---
 
-#### C. Test Case 11a — Instant All-Passed Return Check-in
+#### C. Test Case 11a — Clean Return Check-in (All Passed)
 
 **Pre-condition:** Contract `CNT-2026-0001` has active dispatch `TRX-2026-0001` with asset `EQ-CAT-320-001` in `ON_RENT` status.
 
@@ -504,8 +518,9 @@ Records equipment return from customer site at the end of the hire period. Compa
    - **Return Date & Time:** `2026-11-10 17:00`
    - **Return Hour Meter (hrs):** `1,355.50`
    - **Return Fuel Level (%):** `80.00` *(20% fuel deficit)*
-   - **Damage / Defects Reported:** Unchecked (`False`)
-   - **Damage Description & Assessment Notes:** Leave blank
+   - **Log Minor Damage / Defect:** Unchecked (`False`)
+   - **Require Maintenance / Ground Asset:** Unchecked (`False`)
+   - Verify Damage Description textarea remains hidden.
 5. Inspect the Physical Inspection & Return Checklist table:
    - Verify rows pre-populate with the 6 standard items, all checkboxes checked (Pass).
    - Click the **"Mark All as Passed"** button.
@@ -522,48 +537,39 @@ Records equipment return from customer site at the end of the hire period. Compa
 
 ---
 
-#### D. Test Case 11b — Defect & Damage Logging upon Return
+#### D. Test Case 11b — Minor Damage Logging (Returns to AVAILABLE with Flag)
 
-1. Navigate to the return form for an active transaction (or reset test contract).
+1. Navigate to the return form for an active transaction.
 2. Enter valid closing telemetry:
    - **Return Hour Meter:** `1,355.50`
    - **Return Fuel Level:** `80.00`
-3. On the Return Checklist table, **uncheck** the checkbox for `Hydraulic Lines & Hoses`.
-   - **Expected:** Checkbox unchecks, the green "Pass" label hides, and a red-bordered defect remarks input expands. The row turns red (`table-danger`).
-4. Enter defect remarks: `Pinhole oil leak detected on secondary boom hydraulic hose`.
-5. Check the formal **"Damage / Defects Reported"** checkbox (`True`).
-6. In **Damage Description & Assessment Notes**, enter: `Hydraulic leak on secondary boom line requiring workshop seal kit replacement and pressure testing`.
-7. Click **"Certify Equipment Return Check-in"**.
+3. Check **Log Minor Damage / Defect** checkbox (`True`). Leave **Require Maintenance** unchecked.
+   - **Expected:** Damage Description textarea dynamically expands and is revealed.
+4. Enter Damage Notes: `Scratched door panel and worn decals from site transport`.
+5. Click **"Certify Equipment Return Check-in"**.
 
 **Expected Output:**
-- Form validates and submits successfully.
-- `return_checklist` JSON contains:
-  ```json
-  {
-    "Cabin & Windshield":      { "status": "Pass", "remarks": "" },
-    "Hydraulic Lines & Hoses": { "status": "Fail", "remarks": "Pinhole oil leak detected on secondary boom hydraulic hose" },
-    "Undercarriage / Tracks":  { "status": "Pass", "remarks": "" },
-    "Engine & Fluid Levels":   { "status": "Pass", "remarks": "" },
-    "Safety Beacon & Alarm":   { "status": "Pass", "remarks": "" },
-    "Cleaning & Washing":      { "status": "Pass", "remarks": "" }
-  }
-  ```
-- Because `damage_reported=True`, `Equipment` asset `EQ-CAT-320-001` status transitions to **`MAINTENANCE`** (Orange/Red Badge), preventing immediate re-hiring until repaired.
-- `RentalContract` status transitions to `RETURNED`.
+- Equipment returns to **`AVAILABLE`** status (asset is NOT grounded and can be rented again immediately).
+- Equipment has `has_minor_damage = True` and displays dual status badges: `[AVAILABLE]` and yellow `[MINOR DAMAGE]` badge on Fleet Master and Contract pages.
 
 ---
 
-#### E. Test Case 11c — Dynamic Item Addition & Quick Suggestion Pills
+#### E. Test Case 11c — Critical Defect & Maintenance Routing (Grounding Asset)
 
-1. On the return form, click the pill button **"+ Cleaning & Washing"**.
-   - **Expected:** If already present, duplicates are prevented and focus moves to the existing row's checkbox.
-2. Click **"+ Add Item"** button.
-   - **Expected:** A new blank row appends with input focus on the component field.
-3. Type `Ground Engaging Tools (Bucket Teeth)` in the component field.
-4. Leave checkbox checked (Pass) or uncheck to report worn teeth with remarks.
-5. Click the 🗑️ **trash icon** on any row to delete it from the table.
-   - **Expected:** The row is immediately removed from the DOM and serialized JSON excludes it.
-6. Submit the form and verify database JSON reflects the custom items accurately.
+1. Navigate to the return form for an active transaction.
+2. Enter valid closing telemetry:
+   - **Return Hour Meter:** `1,355.50`
+   - **Return Fuel Level:** `80.00`
+3. On the checklist, uncheck `Hydraulic Lines & Hoses` and enter remarks: `Blown seal on main hoist ram`.
+4. Check **Require Maintenance / Ground Asset** checkbox (`True`).
+   - **Expected:** Damage Description textarea expands.
+5. Enter Damage Notes: `Severe hydraulic leak requires workshop overhaul and new cylinder pack`.
+6. Click **"Certify Equipment Return Check-in"**.
+
+**Expected Output:**
+- `Equipment` status transitions to **`MAINTENANCE`** (grounded in workshop).
+- `RentalContract` status transitions to `RETURNED`.
+- Asset cannot be dispatched on new contracts until workshop maintenance completes.
 
 ---
 
@@ -573,8 +579,9 @@ Records equipment return from customer site at the end of the hire period. Compa
   - `excess_hours_calculated` stored as `25.50 hrs`.
 - **Contract State:** `RentalContract` transitions to `RETURNED`.
 - **Fleet State Machine:** Asset current hour meter updates to `1,355.50 hrs`. Status becomes:
-  - **`AVAILABLE`** if `damage_reported == False`
-  - **`MAINTENANCE`** if `damage_reported == True`
+  - **`MAINTENANCE`** if `requires_maintenance == True`
+  - **`AVAILABLE`** (with `has_minor_damage` flag) if only `has_minor_damage == True`
+  - **`AVAILABLE`** (clean) if neither damage checkbox is checked
 - **UI Alert:** Success message: *"Equipment '<asset_code>' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
 
 ---

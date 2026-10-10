@@ -196,6 +196,17 @@ class Equipment(TimeStampedModel):
         blank=True,
         help_text=_("Structured key-value specifications (e.g., Operating Weight, Engine Power, Bucket Capacity).")
     )
+    has_minor_damage = models.BooleanField(
+        _("Has Minor Damage / Defect"),
+        default=False,
+        db_index=True,
+        help_text=_("Flag indicating cosmetic or minor defect that does not ground the machinery.")
+    )
+    minor_damage_notes = models.TextField(
+        _("Minor Damage Notes"),
+        blank=True,
+        help_text=_("Description of unresolved cosmetic or minor damages from previous operations.")
+    )
 
     class Meta:
         verbose_name = _("Equipment Asset")
@@ -342,6 +353,11 @@ class Equipment(TimeStampedModel):
 
         old_status = self.status
         self.status = new_status
+        if old_status in [self.Status.MAINTENANCE, self.Status.BREAKDOWN] and new_status == self.Status.AVAILABLE:
+            self.has_minor_damage = False
+            self.minor_damage_notes = ""
+            self.save(update_fields=['status', 'has_minor_damage', 'minor_damage_notes', 'updated_at'])
+            return True
         self.save(update_fields=['status', 'updated_at'])
         return True
 

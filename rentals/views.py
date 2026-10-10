@@ -875,7 +875,9 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
                         'hour_meter': float(eq.current_hour_meter),
                         'fuel_level': float(getattr(eq, 'fuel_level', 100.00)),
                         'status': eq.status,
-                        'status_display': eq.get_status_display()
+                        'status_display': eq.get_status_display(),
+                        'has_minor_damage': bool(eq.has_minor_damage),
+                        'minor_damage_notes': str(eq.minor_damage_notes or '')
                     }
                     for eq in assigned_eq
                 }
@@ -903,6 +905,10 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
             'dispatch_datetime': form.cleaned_data['dispatch_datetime'],
             'dispatch_hour_meter': form.cleaned_data['dispatch_hour_meter'],
             'dispatch_fuel_level': form.cleaned_data['dispatch_fuel_level'],
+            'has_minor_damage': form.cleaned_data.get('has_minor_damage', False),
+            'requires_maintenance': form.cleaned_data.get('requires_maintenance', False),
+            'damage_notes': form.cleaned_data.get('damage_notes', ''),
+            'damage_reported': form.cleaned_data.get('damage_reported', False),
             'dispatch_checklist': form.cleaned_data['dispatch_checklist'],
         }
 
@@ -949,8 +955,10 @@ class ReturnCreateView(RoleRequiredMixin, UpdateView):
             'return_datetime': form.cleaned_data['return_datetime'],
             'return_hour_meter': form.cleaned_data['return_hour_meter'],
             'return_fuel_level': form.cleaned_data['return_fuel_level'],
-            'damage_reported': form.cleaned_data['damage_reported'],
-            'damage_notes': form.cleaned_data['damage_notes'],
+            'has_minor_damage': form.cleaned_data.get('has_minor_damage', False),
+            'requires_maintenance': form.cleaned_data.get('requires_maintenance', False),
+            'damage_reported': form.cleaned_data.get('damage_reported', False),
+            'damage_notes': form.cleaned_data.get('damage_notes', ''),
             'return_checklist': form.cleaned_data['return_checklist'],
         }
 

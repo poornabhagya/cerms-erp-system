@@ -293,6 +293,24 @@ def process_equipment_dispatch(contract_id: str, dispatch_data: Dict[str, Any], 
         dispatch_fuel_level = Decimal(str(dispatch_data.get('dispatch_fuel_level', '100.00')))
         dispatch_checklist = dispatch_data.get('dispatch_checklist', {})
 
+        has_minor_damage = bool(dispatch_data.get('has_minor_damage', False))
+        requires_maintenance = bool(dispatch_data.get('requires_maintenance', False))
+        damage_notes = str(dispatch_data.get('damage_notes', '')).strip()
+        damage_reported = has_minor_damage or requires_maintenance or bool(dispatch_data.get('damage_reported', False))
+
+        if requires_maintenance:
+            equipment.transition_status(Equipment.Status.MAINTENANCE, user=user, notes=f"Grounded at dispatch for Contract {contract.contract_no}: {damage_notes}")
+            if damage_notes:
+                equipment.minor_damage_notes = damage_notes
+                equipment.save(update_fields=['minor_damage_notes', 'updated_at'])
+            raise ValidationError(f"Equipment '{equipment.asset_code}' requires workshop maintenance and cannot be dispatched to site.")
+
+        if has_minor_damage:
+            equipment.has_minor_damage = True
+            if damage_notes:
+                equipment.minor_damage_notes = damage_notes
+            equipment.save(update_fields=['has_minor_damage', 'minor_damage_notes', 'updated_at'])
+
         # Create Dispatch record
         dispatch_record = DispatchReturn.objects.create(
             transaction_id=transaction_id,
@@ -302,7 +320,11 @@ def process_equipment_dispatch(contract_id: str, dispatch_data: Dict[str, Any], 
             dispatch_hour_meter=dispatch_hour_meter,
             dispatch_fuel_level=dispatch_fuel_level,
             dispatch_officer=user,
-            dispatch_checklist=dispatch_checklist
+            dispatch_checklist=dispatch_checklist,
+            has_minor_damage=has_minor_damage,
+            requires_maintenance=requires_maintenance,
+            damage_reported=damage_reported,
+            damage_notes=damage_notes,
         )
 
         # Update Equipment status and hour meter
@@ -321,12 +343,15 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
     """
     Executes machine check-in and demobilization inspection.
     
-    Step 4.2 State Machine Workflow:
+    Decoupled Damage & Maintenance State Machine Workflow:
     1. Records closing hour meter, return fuel level, inspection checklist.
     2. Computes excess hour meter usage against contract thresholds.
-    3. If damage reported: Transitions Equipment.status -> MAINTENANCE (or BREAKDOWN); else -> AVAILABLE.
-    4. Transitions RentalContract.status -> RETURNED.
-    5. Placeholder: Automatic finance invoice calculation trigger for Step 5.
+    3. Decoupled status transition:
+       - If requires_maintenance: Equipment.status -> MAINTENANCE (grounded).
+       - If ONLY has_minor_damage: Equipment.status -> AVAILABLE (eligible for hire) and flags has_minor_damage=True.
+       - Else: Equipment.status -> AVAILABLE (clean condition).
+       - Checklist fails serve purely as audit log; only explicit maintenance flag grounds the asset.
+    4. Transitions RentalContract.status -> RETURNED if all active on-site equipment returned.
     """
     with transaction.atomic():
         dispatch_record = DispatchReturn.objects.select_for_update().get(transaction_id=dispatch_return_id)
@@ -337,8 +362,13 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
         return_hour_meter = Decimal(str(return_data.get('return_hour_meter', equipment.current_hour_meter)))
         return_fuel_level = Decimal(str(return_data.get('return_fuel_level', '100.00')))
         return_checklist = return_data.get('return_checklist', {})
-        damage_reported = bool(return_data.get('damage_reported', False))
-        damage_notes = str(return_data.get('damage_notes', ''))
+        
+        has_minor_damage = bool(return_data.get('has_minor_damage', False))
+        requires_maintenance = bool(return_data.get('requires_maintenance', False))
+        damage_notes = str(return_data.get('damage_notes', '')).strip()
+        damage_reported = has_minor_damage or requires_maintenance or bool(return_data.get('damage_reported', False))
+        if bool(return_data.get('damage_reported', False)) and not has_minor_damage and not requires_maintenance:
+            requires_maintenance = True
 
         # Calculate excess hours: Duration days * standard 8 hrs/day
         total_contract_days = contract.quotation.duration_days if contract.quotation else 1
@@ -352,18 +382,29 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
         dispatch_record.return_fuel_level = return_fuel_level
         dispatch_record.return_officer = user
         dispatch_record.return_checklist = return_checklist
+        dispatch_record.has_minor_damage = has_minor_damage
+        dispatch_record.requires_maintenance = requires_maintenance
         dispatch_record.damage_reported = damage_reported
         dispatch_record.damage_notes = damage_notes
         dispatch_record.excess_hours_calculated = excess_hours
         dispatch_record.save()
 
-        # Update Equipment current meter reading
+        # Update Equipment current meter reading & status
         equipment.current_hour_meter = return_hour_meter
-        if damage_reported:
-            equipment.transition_status(Equipment.Status.MAINTENANCE, user=user, notes=f"Returned with damages from Contract {contract.contract_no}: {damage_notes}")
+        if requires_maintenance:
+            if damage_notes:
+                equipment.minor_damage_notes = damage_notes
+            equipment.transition_status(Equipment.Status.MAINTENANCE, user=user, notes=f"Returned requiring maintenance from Contract {contract.contract_no}: {damage_notes}")
+            equipment.save(update_fields=['current_hour_meter', 'minor_damage_notes', 'updated_at'])
+        elif has_minor_damage:
+            equipment.has_minor_damage = True
+            if damage_notes:
+                equipment.minor_damage_notes = damage_notes
+            equipment.transition_status(Equipment.Status.AVAILABLE, user=user, notes=f"Returned with minor cosmetic damage from Contract {contract.contract_no}: {damage_notes}")
+            equipment.save(update_fields=['current_hour_meter', 'has_minor_damage', 'minor_damage_notes', 'updated_at'])
         else:
             equipment.transition_status(Equipment.Status.AVAILABLE, user=user, notes=f"Returned in good order from Contract {contract.contract_no}")
-        equipment.save(update_fields=['current_hour_meter', 'updated_at'])
+            equipment.save(update_fields=['current_hour_meter', 'updated_at'])
 
         # Update Contract status: only set RETURNED if no active dispatches remain on site
         has_other_active_dispatches = contract.dispatch_returns.filter(return_datetime__isnull=True).exclude(pk=dispatch_record.pk).exists()

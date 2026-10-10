@@ -46,3 +46,30 @@ To maintain financial and operational control, key actions require explicit appr
 - **Step 3 (Financial Approval):** `Management` approves the repair cost[cite: 1, 33].
 - **Step 4 (Execution):** Repair is executed[cite: 1, 33].
 - **Step 5 (Resolution):** Job marked as `Completed`, and equipment status returns to `Available`[cite: 1, 33].
+
+## 5. Bifurcated Damage Handling & Decoupled Maintenance Routing
+
+CERMS decouples cosmetic/minor damage tracking from workshop maintenance gating to avoid unnecessary asset downtime while preserving complete operational audit trails.
+
+### Dual Damage Classification Architecture
+
+1. **Log Minor Damage / Defect (`has_minor_damage`):**
+   - Intended for non-critical cosmetic or minor defects (e.g., paint scratch, small dent, worn bucket teeth).
+   - **Return Workflow Impact:** When only minor damage is checked, the equipment transitions back to **`AVAILABLE`** (eligible for immediate future hiring). The asset is flagged with `has_minor_damage = True` and displays persistent dual status badges (e.g., `[AVAILABLE]` + `[MINOR DAMAGE]`) on Fleet Master and Contract pages.
+   - **Dispatch Workflow Impact:** Can be dispatched to site. If an asset has pre-existing minor damage from previous rentals, a prominent alert banner is displayed at the top of the dispatch form: `Unresolved Previous Damages: [Damage Notes]` to establish baseline machine condition before site departure.
+
+2. **Require Maintenance / Ground Asset (`requires_maintenance`):**
+   - Intended for major mechanical, electrical, structural, or safety-critical defects requiring workshop intervention.
+   - **Return Workflow Impact:** Transitions the equipment directly to **`MAINTENANCE`**, grounding the asset and blocking future contract dispatch until workshop technicians complete repairs.
+   - **Dispatch Workflow Impact:** Blocks equipment dispatch and triggers an immediate validation exception, grounding the asset to `MAINTENANCE`.
+
+### Dynamic UI Behavior
+- The **"Damage Description & Assessment Notes"** textarea is completely hidden by default on both Dispatch and Return forms.
+- Vanilla JavaScript dynamically reveals and expands the textarea **only if** either `Log Minor Damage / Defect` or `Require Maintenance / Ground Asset` is checked.
+
+### Checklist Independence
+- Component inspections and checklist pass/fail evaluations serve purely as physical condition logs in JSON format (`{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`).
+- Marking an item as `Fail` in the checklist does **NOT** automatically ground equipment into `MAINTENANCE`. The asset returns to `AVAILABLE` unless the explicit `Require Maintenance / Ground Asset` checkbox is selected by the certifying officer.
+
+### Maintenance Resolution Lifecycle
+- When maintenance or overhaul is completed (transitioning an asset from `MAINTENANCE` or `BREAKDOWN` back to `AVAILABLE`), the system automatically clears unresolved minor damage flags and resets `has_minor_damage = False` and `minor_damage_notes = ""`.

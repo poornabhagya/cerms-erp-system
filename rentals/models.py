@@ -991,6 +991,16 @@ class DispatchReturn(TimeStampedModel):
         blank=True,
         help_text=_("Structured return condition checklist.")
     )
+    has_minor_damage = models.BooleanField(
+        _("Log Minor Damage / Defect"),
+        default=False,
+        help_text=_("Minor cosmetic or component defect logged (e.g., paint scratch, worn tread).")
+    )
+    requires_maintenance = models.BooleanField(
+        _("Require Maintenance / Ground Asset"),
+        default=False,
+        help_text=_("Major defect requiring workshop servicing before re-hiring.")
+    )
     damage_reported = models.BooleanField(
         _("Damage / Defects Reported"),
         default=False,

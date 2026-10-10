@@ -506,13 +506,30 @@ class DispatchForm(forms.ModelForm):
             'dispatch_datetime',
             'dispatch_hour_meter',
             'dispatch_fuel_level',
+            'has_minor_damage',
+            'requires_maintenance',
+            'damage_notes',
+            'damage_reported',
             'dispatch_checklist',
         ]
+        labels = {
+            'has_minor_damage': _("Log Minor Damage / Defect"),
+            'requires_maintenance': _("Require Maintenance / Ground Asset"),
+            'damage_notes': _("Damage Description & Assessment Notes"),
+        }
+        help_texts = {
+            'has_minor_damage': _("Document minor cosmetic issues (scratches, worn paint). Asset continues to site."),
+            'requires_maintenance': _("Ground asset if mechanical safety issue prevents mobilization."),
+        }
         widgets = {
             'transaction_id': forms.TextInput(attrs={'class': 'form-control font-monospace', 'readonly': 'readonly'}),
             'dispatch_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
             'dispatch_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control'}),
             'dispatch_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'placeholder': 'Percentage 0-100%', 'class': 'form-control'}),
+            'has_minor_damage': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_dispatch_has_minor_damage'}),
+            'requires_maintenance': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_dispatch_requires_maintenance'}),
+            'damage_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Detailed description of mobilization defects or damages...', 'class': 'form-control', 'id': 'id_dispatch_damage_notes'}),
+            'damage_reported': forms.HiddenInput(),
             'dispatch_checklist': forms.HiddenInput(attrs={'id': 'id_dispatch_checklist_json'}),
         }
 
@@ -520,6 +537,8 @@ class DispatchForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.contract = contract or (self.initial.get('contract') if hasattr(self, 'initial') else None)
         self.fields['dispatch_checklist'].required = False
+        self.fields['damage_notes'].required = False
+        self.fields['damage_reported'].required = False
         self.fields['contract'].widget.attrs.update({'class': 'form-select'})
         self.fields['equipment'].widget.attrs.update({'class': 'form-select', 'id': 'id_equipment'})
 
@@ -546,15 +565,37 @@ class DispatchForm(forms.ModelForm):
                     Column('dispatch_hour_meter', css_class='col-12 col-md-4 mb-3'),
                     Column('dispatch_fuel_level', css_class='col-12 col-md-4 mb-3'),
                 ),
+                HTML('<div class="p-3 bg-light rounded-3 border mb-3">'),
+                HTML('<h6 class="fw-bold text-dark mb-2"><i class="bi bi-shield-exclamation text-warning me-2"></i> Pre-Departure Condition & Damage Assessment</h6>'),
+                Row(
+                    Column('has_minor_damage', css_class='col-12 col-md-6 mb-2'),
+                    Column('requires_maintenance', css_class='col-12 col-md-6 mb-2'),
+                ),
+                Div(
+                    'damage_notes',
+                    css_id='dispatch_damage_notes_container',
+                    css_class='mt-2'
+                ),
+                HTML('</div>'),
+                Field('damage_reported'),
                 Field('dispatch_checklist'),
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
 
+    def clean(self):
+        cleaned_data = super().clean()
+        has_minor = cleaned_data.get('has_minor_damage')
+        req_maint = cleaned_data.get('requires_maintenance')
+        damage_rep = cleaned_data.get('damage_reported')
+        if (has_minor or req_maint) and not damage_rep:
+            cleaned_data['damage_reported'] = True
+        return cleaned_data
+
 
 class ReturnForm(forms.ModelForm):
     """
-    Form for receiving machinery check-in and damage evaluation.
+    Form for receiving machinery check-in and decoupled damage evaluation.
     """
 
     class Meta:
@@ -563,21 +604,37 @@ class ReturnForm(forms.ModelForm):
             'return_datetime',
             'return_hour_meter',
             'return_fuel_level',
-            'damage_reported',
+            'has_minor_damage',
+            'requires_maintenance',
             'damage_notes',
+            'damage_reported',
             'return_checklist',
         ]
+        labels = {
+            'has_minor_damage': _("Log Minor Damage / Defect"),
+            'requires_maintenance': _("Require Maintenance / Ground Asset"),
+            'damage_notes': _("Damage Description & Assessment Notes"),
+        }
+        help_texts = {
+            'has_minor_damage': _("For minor cosmetic issues (scratches, paint). Machine returns to Available with a minor damage flag."),
+            'requires_maintenance': _("For major issues requiring workshop repair. Grounds machine into Maintenance status."),
+        }
         widgets = {
             'return_datetime': forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'}),
             'return_hour_meter': forms.NumberInput(attrs={'step': '0.1', 'min': '0', 'class': 'form-control'}),
             'return_fuel_level': forms.NumberInput(attrs={'step': '1', 'min': '0', 'max': '100', 'class': 'form-control', 'placeholder': 'Percentage 0-100%'}),
-            'damage_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Detailed description of damages, broken teeth, hydraulic leaks...', 'class': 'form-control'}),
+            'has_minor_damage': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_return_has_minor_damage'}),
+            'requires_maintenance': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_return_requires_maintenance'}),
+            'damage_notes': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Detailed description of damages, broken teeth, hydraulic leaks...', 'class': 'form-control', 'id': 'id_return_damage_notes'}),
+            'damage_reported': forms.HiddenInput(),
             'return_checklist': forms.HiddenInput(attrs={'id': 'id_return_checklist_json'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['return_checklist'].required = False
+        self.fields['damage_notes'].required = False
+        self.fields['damage_reported'].required = False
         self.helper = FormHelper()
         self.helper.form_tag = False
         self.helper.layout = Layout(
@@ -588,13 +645,32 @@ class ReturnForm(forms.ModelForm):
                     Column('return_hour_meter', css_class='col-12 col-md-4 mb-3'),
                     Column('return_fuel_level', css_class='col-12 col-md-4 mb-3'),
                 ),
+                HTML('<div class="p-3 bg-light rounded-3 border mb-3">'),
+                HTML('<h6 class="fw-bold text-dark mb-2"><i class="bi bi-tools text-warning me-2"></i> Machine Condition & Damage Evaluation</h6>'),
                 Row(
-                    Column('damage_reported', css_class='col-12 mb-3'),
+                    Column('has_minor_damage', css_class='col-12 col-md-6 mb-2'),
+                    Column('requires_maintenance', css_class='col-12 col-md-6 mb-2'),
                 ),
-                Row(
-                    Column('damage_notes', css_class='col-12 mb-3'),
+                Div(
+                    'damage_notes',
+                    css_id='return_damage_notes_container',
+                    css_class='mt-2'
                 ),
+                HTML('</div>'),
+                Field('damage_reported'),
                 Field('return_checklist'),
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        has_minor = cleaned_data.get('has_minor_damage')
+        req_maint = cleaned_data.get('requires_maintenance')
+        damage_rep = cleaned_data.get('damage_reported')
+        if (has_minor or req_maint) and not damage_rep:
+            cleaned_data['damage_reported'] = True
+        elif damage_rep and not (has_minor or req_maint):
+            # If legacy form data passed damage_reported=True without specific checkboxes, default to maintenance
+            cleaned_data['requires_maintenance'] = True
+        return cleaned_data

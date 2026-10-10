@@ -54,6 +54,12 @@
     </div>
 </div>
 
+<style>
+    #return_damage_notes_container {
+        display: none;
+    }
+</style>
+
 <form method="post" id="returnForm">
     {% csrf_token %}
 
@@ -123,7 +129,7 @@
     <div class="card border-0 shadow-sm bg-light p-3 mb-4">
         <div class="d-flex justify-content-between align-items-center">
             <div class="text-muted small">
-                <i class="bi bi-info-circle me-1 text-primary"></i> If damage is reported, machine status will transition to <strong>MAINTENANCE</strong>; otherwise <strong>AVAILABLE</strong>. Contract status will transition to <strong>RETURNED</strong>.
+                <i class="bi bi-info-circle me-1 text-primary"></i> If <strong>Require Maintenance</strong> is selected, the equipment transitions to <strong>MAINTENANCE</strong>. If only <strong>Minor Damage</strong> is logged, it returns to <strong>AVAILABLE</strong> with a minor defect badge. Contract status will transition to <strong>RETURNED</strong>.
             </div>
             <div class="d-flex gap-2">
                 <a href="{% url 'rentals:contract_detail' contract_no=contract.contract_no %}" class="btn btn-outline-secondary px-4">Cancel</a>
@@ -359,6 +365,21 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // ── Dynamic Damage Notes Toggle ──
+    const minorDamageCb = document.getElementById('id_return_has_minor_damage');
+    const reqMaintCb = document.getElementById('id_return_requires_maintenance');
+    const damageNotesContainer = document.getElementById('return_damage_notes_container');
+
+    function syncReturnDamageNotes() {
+        if (!damageNotesContainer) return;
+        const shouldShow = (minorDamageCb && minorDamageCb.checked) || (reqMaintCb && reqMaintCb.checked);
+        damageNotesContainer.style.display = shouldShow ? 'block' : 'none';
+    }
+
+    if (minorDamageCb) minorDamageCb.addEventListener('change', syncReturnDamageNotes);
+    if (reqMaintCb) reqMaintCb.addEventListener('change', syncReturnDamageNotes);
+    syncReturnDamageNotes();
 
     // ── Final serialize on submit ──
     if (form) {

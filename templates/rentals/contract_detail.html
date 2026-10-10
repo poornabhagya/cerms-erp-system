@@ -88,21 +88,28 @@
                     <div class="p-3 bg-light rounded-3 border mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <span class="badge bg-dark font-monospace">{{ item.equipment.asset_code }}</span>
-                            {% if item.is_dispatched %}
-                                <span class="badge bg-success"><i class="bi bi-geo-alt-fill me-1"></i> Active on Site</span>
-                            {% elif item.equipment.status == 'AVAILABLE' %}
-                                <span class="badge bg-success">Available</span>
-                            {% elif item.equipment.status == 'RESERVED' %}
-                                <span class="badge bg-info text-dark">Reserved</span>
-                            {% elif item.equipment.status == 'ON_RENT' %}
-                                <span class="badge bg-primary">On Rent</span>
-                            {% elif item.equipment.status == 'MAINTENANCE' %}
-                                <span class="badge bg-warning text-dark">Maintenance</span>
-                            {% elif item.equipment.status == 'BREAKDOWN' %}
-                                <span class="badge bg-danger">Breakdown</span>
-                            {% else %}
-                                <span class="badge bg-secondary">{{ item.equipment.get_status_display }}</span>
-                            {% endif %}
+                            <div>
+                                {% if item.is_dispatched %}
+                                    <span class="badge bg-success"><i class="bi bi-geo-alt-fill me-1"></i> Active on Site</span>
+                                {% elif item.equipment.status == 'AVAILABLE' %}
+                                    <span class="badge bg-success">Available</span>
+                                {% elif item.equipment.status == 'RESERVED' %}
+                                    <span class="badge bg-info text-dark">Reserved</span>
+                                {% elif item.equipment.status == 'ON_RENT' %}
+                                    <span class="badge bg-primary">On Rent</span>
+                                {% elif item.equipment.status == 'MAINTENANCE' %}
+                                    <span class="badge bg-warning text-dark">Maintenance</span>
+                                {% elif item.equipment.status == 'BREAKDOWN' %}
+                                    <span class="badge bg-danger">Breakdown</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ item.equipment.get_status_display }}</span>
+                                {% endif %}
+                                {% if item.equipment.has_minor_damage %}
+                                    <span class="badge bg-warning text-dark ms-1" title="{{ item.equipment.minor_damage_notes|default:'Minor damage reported' }}">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Minor Damage
+                                    </span>
+                                {% endif %}
+                            </div>
                         </div>
                         <h6 class="fw-bold text-dark mb-1">{{ item.equipment.equipment_name }}</h6>
                         <div class="text-muted small mb-2">{{ item.equipment.category.name|default:"Machinery" }} | Model: {{ item.equipment.model_number|default:"Standard" }}</div>
@@ -143,7 +150,14 @@
                         </div>
                         <div class="d-flex justify-content-between align-items-center mb-2 small">
                             <span class="text-muted">Machine Status:</span>
-                            <span class="badge bg-secondary">{{ contract.equipment.get_status_display }}</span>
+                            <div>
+                                <span class="badge bg-secondary">{{ contract.equipment.get_status_display }}</span>
+                                {% if contract.equipment.has_minor_damage %}
+                                    <span class="badge bg-warning text-dark ms-1" title="{{ contract.equipment.minor_damage_notes|default:'Minor damage reported' }}">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Minor Damage
+                                    </span>
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center small">
                             <span class="text-muted">Fuel Level:</span>

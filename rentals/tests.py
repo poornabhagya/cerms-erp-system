@@ -1649,5 +1649,250 @@ class MultiAssetQuotationToContractTestCase(TestCase):
         self.assertEqual(contract.status, RentalContract.Status.RETURNED)
 
 
+class BifurcatedDamageAndMaintenanceTestCase(TestCase):
+    """
+    Unit tests for enterprise-grade bifurcated damage logging and decoupled maintenance routing.
+    Verifies:
+      - Minor damage allows asset to return to AVAILABLE with has_minor_damage flag.
+      - Require maintenance grounds asset to MAINTENANCE.
+      - Checklist fails act solely as condition logs without forcing MAINTENANCE.
+      - Pre-existing damage alert on dispatch form.
+      - Dual badges on fleet master and contract detail pages.
+    """
+
+    def setUp(self):
+        from django.utils import timezone
+        self.now = timezone.now()
+
+        self.rental_officer = User.objects.create_user(
+            username="rental_officer_dmg",
+            email="ro_dmg@cerms.lk",
+            password="Password123!",
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.ops_user = User.objects.create_user(
+            username="ops_officer_dmg",
+            email="ops_dmg@cerms.lk",
+            password="Password123!",
+            role=User.Role.OPERATIONS_OFFICER
+        )
+        self.category = Category.objects.create(name="Excavators", code="EXC")
+
+        self.equipment = Equipment.objects.create(
+            asset_code="EXC-2026-DMG",
+            equipment_name="CAT 320D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT-DMG-001",
+            manufacture_year=2024,
+            purchase_cost=Decimal("35000000.00"),
+            purchase_date=date(2024, 1, 15),
+            current_hour_meter=Decimal("100.0"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        self.customer = Customer.objects.create(
+            customer_code="CUST-2026-DMG",
+            company_name="Mega Builders PLC",
+            contact_person="Sunil Fernando",
+            phone="+94771122334",
+            email="sunil@megabuilders.lk",
+            billing_address="Colombo 03",
+            credit_limit=Decimal("5000000.00"),
+            current_outstanding_balance=Decimal("0.00")
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-DMG-001",
+            customer=self.customer,
+            project_name="Metro Tunnel Project",
+            site_address="Colombo 01"
+        )
+
+        self.quotation = Quotation.objects.create(
+            quotation_no="QT-DMG-2026-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date.today(),
+            end_date=date.today(),
+            security_deposit_required=Decimal("50000.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.equipment,
+            rate_applied=Decimal("25000.00"),
+            subtotal_amount=Decimal("125000.00")
+        )
+        self.contract = convert_quotation_to_contract(self.quotation.quotation_no, user=self.rental_officer)
+
+        # Dispatch equipment cleanly first
+        from rentals.services import process_equipment_dispatch
+        self.dispatch_record = process_equipment_dispatch(
+            contract_id=self.contract.contract_no,
+            dispatch_data={
+                'equipment': self.equipment,
+                'dispatch_datetime': self.now,
+                'dispatch_hour_meter': Decimal('100.0'),
+                'dispatch_fuel_level': Decimal('80.00'),
+                'dispatch_checklist': {'Tracks': 'Pass'}
+            },
+            user=self.ops_user
+        )
+
+    def test_return_with_minor_damage_only_stays_available(self):
+        """Return with minor damage flag keeps equipment AVAILABLE and sets has_minor_damage=True."""
+        from rentals.services import process_equipment_return
+
+        record = process_equipment_return(
+            dispatch_return_id=self.dispatch_record.transaction_id,
+            return_data={
+                'return_datetime': self.now,
+                'return_hour_meter': Decimal('120.0'),
+                'return_fuel_level': Decimal('75.00'),
+                'has_minor_damage': True,
+                'requires_maintenance': False,
+                'damage_notes': 'Scratched side paint and minor cabin dent',
+                'return_checklist': {'Tracks': 'Pass'}
+            },
+            user=self.ops_user
+        )
+
+        self.equipment.refresh_from_db()
+        # Machine MUST transition to AVAILABLE (can be rented again!)
+        self.assertEqual(self.equipment.status, Equipment.Status.AVAILABLE)
+        self.assertTrue(self.equipment.has_minor_damage)
+        self.assertEqual(self.equipment.minor_damage_notes, 'Scratched side paint and minor cabin dent')
+        self.assertTrue(record.has_minor_damage)
+        self.assertFalse(record.requires_maintenance)
+        self.assertTrue(record.damage_reported)
+
+    def test_return_with_requires_maintenance_grounds_asset(self):
+        """Return with requires_maintenance grounds equipment into MAINTENANCE status."""
+        from rentals.services import process_equipment_return
+
+        record = process_equipment_return(
+            dispatch_return_id=self.dispatch_record.transaction_id,
+            return_data={
+                'return_datetime': self.now,
+                'return_hour_meter': Decimal('130.0'),
+                'return_fuel_level': Decimal('70.00'),
+                'has_minor_damage': False,
+                'requires_maintenance': True,
+                'damage_notes': 'Hydraulic ram blown on site',
+                'return_checklist': {'Hydraulics': {'status': 'Fail', 'remarks': 'Ram seal blown'}}
+            },
+            user=self.ops_user
+        )
+
+        self.equipment.refresh_from_db()
+        # Machine MUST transition to MAINTENANCE
+        self.assertEqual(self.equipment.status, Equipment.Status.MAINTENANCE)
+        self.assertTrue(record.requires_maintenance)
+        self.assertTrue(record.damage_reported)
+
+    def test_checklist_fail_does_not_automatically_trigger_maintenance(self):
+        """Checklist failure acts solely as condition log and does NOT trigger MAINTENANCE."""
+        from rentals.services import process_equipment_return
+
+        record = process_equipment_return(
+            dispatch_return_id=self.dispatch_record.transaction_id,
+            return_data={
+                'return_datetime': self.now,
+                'return_hour_meter': Decimal('115.0'),
+                'return_fuel_level': Decimal('70.00'),
+                'has_minor_damage': False,
+                'requires_maintenance': False,
+                'damage_notes': '',
+                'return_checklist': {'Cab Glass': {'status': 'Fail', 'remarks': 'Dusty / wiper streak'}}
+            },
+            user=self.ops_user
+        )
+
+        self.equipment.refresh_from_db()
+        # Machine returns to AVAILABLE despite checklist fail
+        self.assertEqual(self.equipment.status, Equipment.Status.AVAILABLE)
+        self.assertFalse(self.equipment.has_minor_damage)
+        self.assertFalse(record.requires_maintenance)
+
+    def test_pre_existing_damage_displayed_on_dispatch_page(self):
+        """Dispatch form provides pre-existing damage in telemetry JSON and template alert markup."""
+        # Flag equipment with pre-existing minor damage
+        self.equipment.has_minor_damage = True
+        self.equipment.minor_damage_notes = "Cracked rear tail-light housing"
+        self.equipment.save()
+
+        # Contract for this asset via quotation
+        quotation2 = Quotation.objects.create(
+            quotation_no="QT-DMG-2026-02",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date.today(),
+            end_date=date.today(),
+            security_deposit_required=Decimal("50000.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=quotation2,
+            equipment=self.equipment,
+            rate_applied=Decimal("25000.00"),
+            subtotal_amount=Decimal("75000.00")
+        )
+        contract2 = convert_quotation_to_contract(quotation2.quotation_no, user=self.rental_officer)
+
+        self.client.force_login(self.ops_user)
+        response = self.client.get(f'/rentals/contracts/{contract2.contract_no}/dispatch/')
+        self.assertEqual(response.status_code, 200)
+
+        # Telemetry JSON contains pre-existing damage flag & notes
+        telemetry_json = response.context['equipment_telemetry_json']
+        self.assertIn('"has_minor_damage": true', telemetry_json)
+        self.assertIn('Cracked rear tail-light housing', telemetry_json)
+
+        # Template contains previous damage alert placeholder
+        content = response.content.decode('utf-8')
+        self.assertIn('id="previousDamageAlert"', content)
+        self.assertIn('Unresolved Previous Damages:', content)
+
+    def test_maintenance_resolution_clears_minor_damage(self):
+        """Transitioning from MAINTENANCE back to AVAILABLE clears minor damage flags."""
+        self.equipment.status = Equipment.Status.MAINTENANCE
+        self.equipment.has_minor_damage = True
+        self.equipment.minor_damage_notes = "Worn bucket teeth"
+        self.equipment.save()
+
+        self.equipment.transition_status(Equipment.Status.AVAILABLE, notes="Workshop overhaul complete")
+        self.equipment.refresh_from_db()
+
+        self.assertEqual(self.equipment.status, Equipment.Status.AVAILABLE)
+        self.assertFalse(self.equipment.has_minor_damage)
+        self.assertEqual(self.equipment.minor_damage_notes, "")
+
+    def test_status_badges_rendered_on_fleet_and_contract(self):
+        """Dual badges (e.g. AVAILABLE + Minor Damage) render on fleet list and contract detail."""
+        from django.urls import reverse
+        self.equipment.status = Equipment.Status.AVAILABLE
+        self.equipment.has_minor_damage = True
+        self.equipment.minor_damage_notes = "Scratched decal on door"
+        self.equipment.save()
+
+        self.client.force_login(self.rental_officer)
+
+        # 1. Fleet list
+        fleet_response = self.client.get(reverse('fleet:equipment_list'))
+        self.assertEqual(fleet_response.status_code, 200)
+        fleet_html = fleet_response.content.decode('utf-8')
+        self.assertIn('Available', fleet_html)
+        self.assertIn('Minor Damage', fleet_html)
+
+        # 2. Contract detail
+        contract_response = self.client.get(f'/rentals/contracts/{self.contract.contract_no}/')
+        self.assertEqual(contract_response.status_code, 200)
+        contract_html = contract_response.content.decode('utf-8')
+        self.assertIn('Minor Damage', contract_html)
+
+
+
 
 
