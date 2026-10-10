@@ -43,6 +43,7 @@
 
 <form method="post" id="quotationForm">
     {% csrf_token %}
+    {{ equipment_status_map|json_script:"equipment-status-data" }}
 
     <!-- 1. Header Scope Card -->
     <div class="card shadow-sm border-0 mb-4">
@@ -124,6 +125,16 @@
                                 {% if item_form.equipment.errors %}
                                     <div class="text-danger small mt-1">{{ item_form.equipment.errors }}</div>
                                 {% endif %}
+                                <div class="maintenance-warning-container mt-2">
+                                    {% if item_form.instance.equipment and item_form.instance.equipment.status in "MAINTENANCE,BREAKDOWN" %}
+                                    <div class="alert alert-warning border-warning d-flex align-items-center py-2 px-2 mb-0 shadow-sm rounded-2">
+                                        <i class="bi bi-exclamation-triangle-fill text-warning me-2 flex-shrink-0 fs-6"></i>
+                                        <div class="small text-dark">
+                                            <strong>⚠️ Warning:</strong> {{ item_form.instance.equipment.equipment_name }} is currently under {% if item_form.instance.equipment.status == 'BREAKDOWN' %}breakdown{% else %}maintenance{% endif %}. Ensure repairs are completed before the scheduled dispatch date.
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
                             </td>
                             <td>
                                 {{ item_form.start_date }}
@@ -182,6 +193,7 @@
                 <td class="ps-3">
                     {{ item_formset.empty_form.id }}
                     {{ item_formset.empty_form.equipment }}
+                    <div class="maintenance-warning-container mt-2"></div>
                 </td>
                 <td>{{ item_formset.empty_form.start_date }}</td>
                 <td>{{ item_formset.empty_form.end_date }}</td>
@@ -305,6 +317,39 @@ document.addEventListener('DOMContentLoaded', function () {
     const addItemBtn = document.getElementById('add-item-btn');
     const emptyFormTemplate = document.getElementById('empty-form-row').innerHTML;
 
+    const equipmentDataEl = document.getElementById('equipment-status-data');
+    const equipmentStatusMap = equipmentDataEl ? JSON.parse(equipmentDataEl.textContent || '{}') : {};
+
+    function updateMaintenanceWarning(row) {
+        if (row.style.display === 'none') return;
+        const eqSelect = row.querySelector('.item-equipment');
+        let warningContainer = row.querySelector('.maintenance-warning-container');
+        if (!warningContainer && eqSelect) {
+            warningContainer = document.createElement('div');
+            warningContainer.className = 'maintenance-warning-container mt-2';
+            eqSelect.parentNode.appendChild(warningContainer);
+        }
+        if (!warningContainer) return;
+
+        const assetCode = eqSelect ? eqSelect.value : '';
+        const eqData = assetCode ? equipmentStatusMap[assetCode] : null;
+
+        if (eqData && (eqData.status === 'MAINTENANCE' || eqData.status === 'BREAKDOWN')) {
+            const statusLabel = eqData.status === 'BREAKDOWN' ? 'breakdown' : 'maintenance';
+            const assetName = eqData.name || assetCode;
+            warningContainer.innerHTML = `
+                <div class="alert alert-warning border-warning d-flex align-items-center py-2 px-2 mb-0 shadow-sm rounded-2">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-2 flex-shrink-0 fs-6"></i>
+                    <div class="small text-dark">
+                        <strong>⚠️ Warning:</strong> ${assetName} is currently under ${statusLabel}. Ensure repairs are completed before the scheduled dispatch date.
+                    </div>
+                </div>
+            `;
+        } else {
+            warningContainer.innerHTML = '';
+        }
+    }
+
     function getDays(startVal, endVal) {
         if (!startVal) startVal = parentStartInput ? parentStartInput.value : '';
         if (!endVal) endVal = parentEndInput ? parentEndInput.value : '';
@@ -420,6 +465,17 @@ document.addEventListener('DOMContentLoaded', function () {
             elem.addEventListener('input', calculateAllTotals);
             elem.addEventListener('change', calculateAllTotals);
         });
+
+        const eqSelect = row.querySelector('.item-equipment');
+        if (eqSelect) {
+            eqSelect.addEventListener('change', function () {
+                updateMaintenanceWarning(row);
+            });
+            eqSelect.addEventListener('input', function () {
+                updateMaintenanceWarning(row);
+            });
+            updateMaintenanceWarning(row);
+        }
 
         const removeBtn = row.querySelector('.remove-new-row-btn');
         if (removeBtn) {

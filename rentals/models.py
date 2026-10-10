@@ -560,6 +560,16 @@ class Quotation(TimeStampedModel):
             self.Status.CONVERTED,
         ]
 
+    @property
+    def has_maintenance_items(self) -> bool:
+        """
+        Returns True if any equipment line item in this quotation currently references
+        machinery in MAINTENANCE or BREAKDOWN status.
+        """
+        return self.items.filter(
+            equipment__status__in=['MAINTENANCE', 'BREAKDOWN']
+        ).exists()
+
 
 class QuotationItem(TimeStampedModel):
     """
@@ -637,6 +647,13 @@ class QuotationItem(TimeStampedModel):
         if s and e and e >= s:
             return max(1, (e - s).days + 1)
         return 1
+
+    @property
+    def is_under_maintenance(self) -> bool:
+        """
+        Returns True if the referenced machinery asset is currently in MAINTENANCE or BREAKDOWN status.
+        """
+        return bool(self.equipment and self.equipment.status in ['MAINTENANCE', 'BREAKDOWN'])
 
     def calculate_subtotal(self) -> Decimal:
         return (Decimal(self.duration_days) * (self.rate_applied or Decimal('0.00'))).quantize(Decimal('0.01'))

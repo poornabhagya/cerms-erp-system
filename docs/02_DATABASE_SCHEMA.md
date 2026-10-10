@@ -57,6 +57,7 @@ The schema is distributed across the 5 core Django apps defined in the project a
   - `quotation_no` (PK)
   - `customer` (FK -> Customer), `project` (FK -> ProjectSite), `equipment` (FK -> fleet.Equipment)
   - `rental_period`, `total_amount`, `security_deposit`, `discount`, `status` (Pending, Approved)
+  - *Business Rule:* Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.
 - **RentalContract**
   - `contract_no` (PK)
   - `quotation` (OneToOne/FK -> Quotation), `customer` (FK -> Customer), `equipment` (FK -> fleet.Equipment)

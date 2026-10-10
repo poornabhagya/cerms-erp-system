@@ -311,6 +311,7 @@ The CERMS pricing engine strictly adheres to the following multi-item business l
 - **Quotation Status:** Created in `DRAFT` status (Grey Badge).
 - **Multi-Item Specification Table:** Detail page renders an itemized table listing each asset, serial number, rental period, rate applied, and line subtotal.
 - **Credit Check Validation:** `Access Engineering PLC` projected exposure is $\text{Rs. } 1,041,350.00 < \text{Credit Limit (Rs. } 2,000,000.00)$. The credit banner displays: *"Credit Check Passed (Margin Remaining: Rs. 958,650.00)"* styled with a green success badge.
+- **Maintenance / Breakdown Soft Warning:** *Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.* If an equipment asset in `MAINTENANCE` or `BREAKDOWN` status is selected, an inline alert dynamically appears: `⚠️ Warning: [Asset Name] is currently under maintenance. Ensure repairs are completed before the scheduled dispatch date.`
 
 ---
 
@@ -318,6 +319,7 @@ The CERMS pricing engine strictly adheres to the following multi-item business l
 
 #### A. Feature Overview & Purpose
 Validates the approval hierarchy and multi-asset contract conversion. Rental Officers cannot self-approve quotations. Upon managerial approval and customer acceptance, converting the multi-item quotation automatically generates the master `RentalContract` and corresponding `RentalContractItem` child records, reserving all quoted machinery.
+*Business Rule:* Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.
 
 #### B. Step-by-Step UI Actions
 1. While logged in as `rental_officer`, view the quotation detail page (`/rentals/quotations/QT-2026-0001/`).
@@ -325,15 +327,16 @@ Validates the approval hierarchy and multi-asset contract conversion. Rental Off
 3. Notice that the **"Approve Quotation"** button is **disabled/hidden** for the `Rental Officer` role.
 4. Log out and log in as `admin` or a user with role `MANAGEMENT`.
 5. Navigate to the quotation `/rentals/quotations/QT-2026-0001/`.
-6. Click **"Approve Commercial Quotation"**.
+6. Inspect the quotation items: Any machine currently in `MAINTENANCE` or `BREAKDOWN` status prominently displays a yellow advisory warning beneath the item as well as a top-level alert prompting the manager to consult the Workshop Manager regarding repair completion schedules.
+7. Click **"Approve Commercial Quotation"**.
    - **State Transition:** `UNDER_REVIEW` $\rightarrow$ `APPROVED_BY_MANAGEMENT`.
-7. Click **"Mark as Sent to Customer"** $\rightarrow$ status becomes `SENT_TO_CUSTOMER`.
-8. Click **"Record Customer Acceptance"** $\rightarrow$ status becomes `ACCEPTED`.
-9. Click **"Convert to Binding Rental Contract"**.
-10. In the modal dialog, select:
+8. Click **"Mark as Sent to Customer"** $\rightarrow$ status becomes `SENT_TO_CUSTOMER`.
+9. Click **"Record Customer Acceptance"** $\rightarrow$ status becomes `ACCEPTED`.
+10. Click **"Convert to Binding Rental Contract"**.
+11. In the modal dialog, select:
     - **Billing Cycle:** `MONTHLY` (or `DAILY`)
     - **Deposit Paid at Signing (LKR):** `250,000.00`
-11. Click **"Confirm & Generate Contract"**.
+12. Click **"Confirm & Generate Contract"**.
 
 #### C. State Machine & Expected Output
 - **Quotation State:** Marked as `CONVERTED` (Badge: Green).

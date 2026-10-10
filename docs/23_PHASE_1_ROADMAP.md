@@ -291,8 +291,8 @@ graph TD
 
 - **Views & Templates (`rentals/views.py` & `templates/rentals/`):**
   - `QuotationListView` (`templates/rentals/quotation_list.html`): Quotation register with lifecycle status filter tabs (`DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `CONVERTED`), customer search, and PDF export shortcut.
-  - `QuotationDetailView` (`templates/rentals/quotation_detail.html`): Itemized commercial breakdown, customer credit exposure summary banner, approval/rejection action buttons for Managers, and 1-click "Convert to Contract" trigger.
-  - `QuotationCreateUpdateView` (`templates/rentals/quotation_form.html`): Dynamic quote builder with AJAX rate card lookup, live subtotal/tax/deposit calculation, and credit check warnings.
+  - `QuotationDetailView` (`templates/rentals/quotation_detail.html`): Itemized commercial breakdown, customer credit exposure summary banner, managerial soft warning banner for machinery under maintenance/breakdown, approval/rejection action buttons for Managers, and 1-click "Convert to Contract" trigger.
+  - `QuotationCreateUpdateView` (`templates/rentals/quotation_form.html`): Dynamic quote builder with line item rate calculation, live subtotal/tax/deposit calculation, dynamic inline soft warnings for assets in `MAINTENANCE` or `BREAKDOWN` status (assets under maintenance are not blocked from being quoted to accommodate future rental dates, but trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion), and credit check warnings.
   - `RentalContractListView` (`templates/rentals/contract_list.html`): Active rental contract registry with dispatch status badges, billing cycle indicators, and return schedule alerts.
   - `RentalContractDetailView` (`templates/rentals/contract_detail.html`): Contract dashboard displaying equipment specs, agreed rates, physical dispatch log history, invoices generated, and signed PDF download.
   - `DispatchCreateView` (`templates/rentals/dispatch_form.html`): Mobile-responsive machine dispatch checklist for yard officers logging opening hour-meters, fuel level gauge, and handover photos.

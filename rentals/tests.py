@@ -1176,5 +1176,238 @@ class ReturnFormTestCase(SimpleTestCase):
         self.assertEqual(initial['return_fuel_level'], Decimal('100.00'))
 
 
+class QuotationMaintenanceSoftWarningTestCase(TestCase):
+    """
+    Unit tests validating soft warning logic for assets in MAINTENANCE or BREAKDOWN
+    status during quotation creation and managerial approval.
+    """
+
+    def setUp(self):
+        self.category = Category.objects.create(
+            name="Excavators",
+            code="EXC",
+            description="Earthmoving equipment"
+        )
+        self.eq_available = Equipment.objects.create(
+            asset_code="EQ-EXC-CAT-001",
+            equipment_name="CAT 320D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="SN-CAT-320-9991",
+            manufacture_year=2022,
+            purchase_cost=Decimal("25000000.00"),
+            purchase_date=date(2022, 1, 15),
+            current_hour_meter=Decimal("1200.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+        self.eq_maintenance = Equipment.objects.create(
+            asset_code="EQ-EXC-KOM-002",
+            equipment_name="Komatsu PC200 Excavator",
+            category=self.category,
+            brand="Komatsu",
+            model_number="PC200",
+            serial_number="SN-KOM-200-9992",
+            manufacture_year=2021,
+            purchase_cost=Decimal("22000000.00"),
+            purchase_date=date(2021, 5, 20),
+            current_hour_meter=Decimal("1850.00"),
+            status=Equipment.Status.MAINTENANCE
+        )
+        self.eq_breakdown = Equipment.objects.create(
+            asset_code="EQ-EXC-VOL-003",
+            equipment_name="Volvo EC210 Excavator",
+            category=self.category,
+            brand="Volvo",
+            model_number="EC210",
+            serial_number="SN-VOL-210-9993",
+            manufacture_year=2020,
+            purchase_cost=Decimal("21000000.00"),
+            purchase_date=date(2020, 8, 10),
+            current_hour_meter=Decimal("2400.00"),
+            status=Equipment.Status.BREAKDOWN
+        )
+        self.customer = Customer.objects.create(
+            customer_code="CUST-2026-999",
+            company_name="Mega Builders PLC",
+            contact_person="Nimal Perera",
+            phone="+94771112233",
+            email="nimal@megabuilders.lk",
+            credit_limit=Decimal("5000000.00")
+        )
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-999-01",
+            customer=self.customer,
+            project_name="Highway Expansion Project"
+        )
+        self.manager_user = User.objects.create_user(
+            username='mgmt_tester',
+            email='mgmt@cerms.lk',
+            password='TestPassword123!',
+            role=User.Role.MANAGEMENT
+        )
+        self.rental_officer = User.objects.create_user(
+            username='ro_tester',
+            email='ro@cerms.lk',
+            password='TestPassword123!',
+            role=User.Role.RENTAL_OFFICER
+        )
+
+    def test_maintenance_assets_not_blocked_in_quotation_item(self):
+        """Quotation creation allows equipment in MAINTENANCE or BREAKDOWN status without errors."""
+        quote = Quotation.objects.create(
+            quotation_no="QT-2026-9001",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
+            status=Quotation.Status.DRAFT
+        )
+        item_maint = QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.eq_maintenance,
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("500000.00")
+        )
+        item_break = QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.eq_breakdown,
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("450000.00")
+        )
+
+        self.assertTrue(item_maint.is_under_maintenance)
+        self.assertTrue(item_break.is_under_maintenance)
+        self.assertTrue(quote.has_maintenance_items)
+
+    def test_available_asset_not_marked_as_maintenance(self):
+        """Available equipment does not flag is_under_maintenance."""
+        quote = Quotation.objects.create(
+            quotation_no="QT-2026-9002",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
+            status=Quotation.Status.DRAFT
+        )
+        item_avail = QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.eq_available,
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("500000.00")
+        )
+        self.assertFalse(item_avail.is_under_maintenance)
+        self.assertFalse(quote.has_maintenance_items)
+
+    def test_quotation_formset_allows_maintenance_equipment(self):
+        """QuotationItemFormSet validates successfully when quoting a machine under maintenance."""
+        formset_data = {
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-equipment': self.eq_maintenance.asset_code,
+            'items-0-start_date': '2026-12-01',
+            'items-0-end_date': '2026-12-10',
+            'items-0-rate_type': Quotation.RateType.DAILY,
+            'items-0-rate_applied': '50000.00',
+            'items-0-subtotal_amount': '500000.00',
+        }
+        formset = QuotationItemFormSet(data=formset_data)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+    def test_quotation_create_and_update_views_context_status_map(self):
+        """Quotation create and update views provide equipment_status_map in context."""
+        from django.test import RequestFactory
+        from rentals.views import QuotationCreateView, QuotationUpdateView
+
+        factory = RequestFactory()
+
+        # Create View
+        req_create = factory.get('/rentals/quotations/create/')
+        req_create.user = self.rental_officer
+        view_create = QuotationCreateView()
+        view_create.setup(req_create)
+        view_create.object = None
+        context_create = view_create.get_context_data()
+        self.assertIn('equipment_status_map', context_create)
+        self.assertTrue(context_create['equipment_status_map'][self.eq_maintenance.asset_code]['is_under_maintenance'])
+        self.assertTrue(context_create['equipment_status_map'][self.eq_breakdown.asset_code]['is_under_maintenance'])
+        self.assertFalse(context_create['equipment_status_map'][self.eq_available.asset_code]['is_under_maintenance'])
+
+        # Update View
+        quote = Quotation.objects.create(
+            quotation_no="QT-2026-9003",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
+            status=Quotation.Status.DRAFT
+        )
+        req_update = factory.get(f'/rentals/quotations/{quote.quotation_no}/edit/')
+        req_update.user = self.rental_officer
+        view_update = QuotationUpdateView()
+        view_update.setup(req_update, quotation_no=quote.quotation_no)
+        view_update.object = quote
+        context_update = view_update.get_context_data()
+        self.assertIn('equipment_status_map', context_update)
+        self.assertTrue(context_update['equipment_status_map'][self.eq_maintenance.asset_code]['is_under_maintenance'])
+
+    def test_quotation_detail_view_context_has_maintenance_items(self):
+        """QuotationDetailView exposes has_maintenance_items boolean in context."""
+        from django.test import RequestFactory
+        from rentals.views import QuotationDetailView
+
+        factory = RequestFactory()
+        quote = Quotation.objects.create(
+            quotation_no="QT-2026-9004",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
+            status=Quotation.Status.PENDING_INTERNAL_APPROVAL
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.eq_maintenance,
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("500000.00")
+        )
+
+        req = factory.get(f'/rentals/quotations/{quote.quotation_no}/')
+        req.user = self.manager_user
+        view = QuotationDetailView()
+        view.setup(req, quotation_no=quote.quotation_no)
+        view.object = quote
+        context = view.get_context_data()
+        self.assertTrue(context['has_maintenance_items'])
+
+    def test_managerial_approval_of_quotation_with_maintenance_item(self):
+        """Authorizing manager can approve quotation with maintenance items after advisory warning."""
+        quote = Quotation.objects.create(
+            quotation_no="QT-2026-9005",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
+            status=Quotation.Status.PENDING_INTERNAL_APPROVAL
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.eq_maintenance,
+            rate_applied=Decimal("50000.00"),
+            subtotal_amount=Decimal("500000.00")
+        )
+        self.client.force_login(self.manager_user)
+        response = self.client.post(
+            f'/rentals/quotations/{quote.quotation_no}/transition/',
+            {'action': 'approve'}
+        )
+        self.assertEqual(response.status_code, 302)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quotation.Status.APPROVED_BY_MANAGEMENT)
+        self.assertEqual(quote.approved_by, self.manager_user)
+
+
 
 

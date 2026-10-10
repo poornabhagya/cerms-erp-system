@@ -137,6 +137,23 @@
 </div>
 {% endif %}
 
+<!-- Maintenance / Breakdown Asset Advisory Banner for Authorizing Managers -->
+{% if has_maintenance_items %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning d-flex align-items-center mb-0 shadow-sm border-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-3 text-warning me-3 flex-shrink-0"></i>
+            <div>
+                <strong class="d-block text-dark">⚠️ Maintenance / Breakdown Advisory for Authorizing Manager</strong>
+                <small class="text-dark">
+                    One or more machinery assets in this quotation are currently under maintenance or breakdown. Assets under maintenance are not blocked from being quoted to accommodate future rental dates; however, you must consult the <strong>Workshop Manager</strong> to verify repair timelines prior to granting final quotation approval.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
     <!-- Left Column: Scope, Pricing & Financial Breakdown -->
     <div class="col-12 col-lg-8">
@@ -172,7 +189,21 @@
                                         </a>
                                         <span class="badge bg-secondary">{{ item.equipment.category.name|default:"General Fleet" }}</span>
                                         <span class="badge bg-info text-dark">Meter: {{ item.equipment.current_hour_meter }} hrs</span>
+                                        {% if item.equipment.status == 'MAINTENANCE' %}
+                                            <span class="badge bg-warning text-dark"><i class="bi bi-tools me-1"></i> Maintenance</span>
+                                        {% elif item.equipment.status == 'BREAKDOWN' %}
+                                            <span class="badge bg-danger"><i class="bi bi-exclamation-octagon me-1"></i> Breakdown</span>
+                                        {% endif %}
                                     </div>
+                                    {% if item.equipment.status == 'MAINTENANCE' or item.equipment.status == 'BREAKDOWN' %}
+                                    <div class="alert alert-warning border-warning d-flex align-items-start py-2 px-3 mt-2 mb-0 shadow-sm rounded-2" role="alert">
+                                        <i class="bi bi-exclamation-triangle-fill text-warning me-2 mt-1 flex-shrink-0 fs-6"></i>
+                                        <div class="small">
+                                            <strong class="text-dark">⚠️ Warning:</strong> <strong>{{ item.equipment.equipment_name }}</strong> is currently under {% if item.equipment.status == 'BREAKDOWN' %}breakdown{% else %}maintenance{% endif %}. Ensure repairs are completed before the scheduled dispatch date.
+                                            <div class="text-muted mt-1 fst-italic">Please consult the Workshop Manager before granting final approval.</div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     <div class="small fw-semibold">{{ item.item_start_date|date:"M d, Y" }} &rarr; {{ item.item_end_date|date:"M d, Y" }}</div>

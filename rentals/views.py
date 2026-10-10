@@ -428,6 +428,7 @@ class QuotationDetailView(RoleRequiredMixin, DetailView):
 
         # Preloaded items
         context['items'] = quotation.items.select_related('equipment', 'equipment__category').all()
+        context['has_maintenance_items'] = quotation.has_maintenance_items
 
         # Real-time credit validation check
         context['credit_check'] = validate_customer_credit_limit(quotation.customer, quotation.grand_total_amount)
@@ -465,6 +466,16 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['is_edit'] = False
+        all_equipment = Equipment.objects.all()
+        context['equipment_status_map'] = {
+            eq.asset_code: {
+                'name': eq.equipment_name,
+                'status': eq.status,
+                'status_display': eq.get_status_display(),
+                'is_under_maintenance': eq.status in [Equipment.Status.MAINTENANCE, Equipment.Status.BREAKDOWN],
+            }
+            for eq in all_equipment
+        }
         if self.request.POST:
             context['item_formset'] = QuotationItemFormSet(self.request.POST)
         else:
@@ -526,6 +537,16 @@ class QuotationUpdateView(RoleRequiredMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['is_edit'] = True
+        all_equipment = Equipment.objects.all()
+        context['equipment_status_map'] = {
+            eq.asset_code: {
+                'name': eq.equipment_name,
+                'status': eq.status,
+                'status_display': eq.get_status_display(),
+                'is_under_maintenance': eq.status in [Equipment.Status.MAINTENANCE, Equipment.Status.BREAKDOWN],
+            }
+            for eq in all_equipment
+        }
         if self.request.POST:
             context['item_formset'] = QuotationItemFormSet(self.request.POST, instance=self.object)
         else:

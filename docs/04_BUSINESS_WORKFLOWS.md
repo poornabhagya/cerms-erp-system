@@ -36,6 +36,9 @@ To maintain financial and operational control, key actions require explicit appr
 - **Step 3 (Client Acceptance):** Approved by the `Customer`[cite: 1, 33].
 - **Step 4 (Execution):** Converted to a Rental Contract[cite: 1, 33].
 
+> **Business Rule (Assets Under Maintenance/Breakdown in Quotations):**
+> *Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.*
+
 ### Maintenance & Repair Flow
 
 - **Step 1 (Assessment):** A `Technician` (or Field Officer) reports a breakdown or schedules maintenance[cite: 1, 33].
