@@ -284,6 +284,13 @@ def process_equipment_dispatch(contract_id: str, dispatch_data: Dict[str, Any], 
         if not equipment:
             raise ValidationError(f"No equipment asset found on Contract '{contract.contract_no}' for dispatch.")
 
+        # Validate that this equipment is not already actively dispatched under this contract
+        active_dispatch = contract.dispatch_returns.filter(equipment=equipment, return_datetime__isnull=True).first()
+        if active_dispatch:
+            raise ValidationError(
+                f"Equipment '{equipment.asset_code}' is already actively dispatched under Transaction '{active_dispatch.transaction_id}' on this contract."
+            )
+
         current_year = timezone.now().year
         trx_count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1
         transaction_id = f"TRX-{current_year}-{trx_count:04d}"
@@ -325,7 +332,7 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
     1. Records closing hour meter, return fuel level, inspection checklist.
     2. Computes excess hour meter usage against contract thresholds.
     3. If damage reported: Transitions Equipment.status -> MAINTENANCE (or BREAKDOWN); else -> AVAILABLE.
-    4. Transitions RentalContract.status -> RETURNED.
+    4. Transitions RentalContract.status -> RETURNED (only when all contracted assets are returned).
     5. Placeholder: Automatic finance invoice calculation trigger for Step 5.
     """
     with transaction.atomic():
@@ -365,9 +372,33 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
             equipment.transition_status(Equipment.Status.AVAILABLE, user=user, notes=f"Returned in good order from Contract {contract.contract_no}")
         equipment.save(update_fields=['current_hour_meter', 'updated_at'])
 
-        # Update Contract status
-        contract.status = RentalContract.Status.RETURNED
-        contract.save(update_fields=['status', 'updated_at'])
+        # Update Contract status:
+        # For multi-asset contracts, only mark contract as RETURNED if all assets are returned
+        remaining_open_dispatches = contract.dispatch_returns.filter(
+            return_datetime__isnull=True
+        ).exclude(pk=dispatch_record.pk).exists()
+
+        all_contract_eq_ids = set(contract.items.values_list('equipment_id', flat=True))
+        if not all_contract_eq_ids and contract.equipment_id:
+            all_contract_eq_ids = {contract.equipment_id}
+
+        returned_eq_ids = set(
+            contract.dispatch_returns.filter(return_datetime__isnull=False)
+            .exclude(pk=dispatch_record.pk)
+            .values_list('equipment_id', flat=True)
+        )
+        returned_eq_ids.add(equipment.id)
+
+        all_contracted_returned = all_contract_eq_ids.issubset(returned_eq_ids) if all_contract_eq_ids else True
+
+        if not remaining_open_dispatches and all_contracted_returned:
+            contract.status = RentalContract.Status.RETURNED
+            contract.save(update_fields=['status', 'updated_at'])
+        else:
+            # If machines are still operating on site, keep status ON_RENT
+            if remaining_open_dispatches and contract.status != RentalContract.Status.ON_RENT:
+                contract.status = RentalContract.Status.ON_RENT
+                contract.save(update_fields=['status', 'updated_at'])
 
         # --- Automated Finance Integration Hook ---
         # Note: Step 5 Billing Engine will invoke generate_final_rental_invoice(contract.contract_no, user)

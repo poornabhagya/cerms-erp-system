@@ -45,8 +45,14 @@
             <span class="text-dark">{{ contract.project_site.project_name }}</span>
         </div>
         <div class="col-12 col-md-3">
-            <small class="text-muted text-uppercase fw-bold d-block">Assigned Machine Asset</small>
-            {% if contract.equipment %}
+            <small class="text-muted text-uppercase fw-bold d-block">Contract Fleet Machinery</small>
+            {% if contract_equipments|length > 1 %}
+            <span class="badge bg-primary font-monospace me-1">{{ contract_equipments|length }} Machines</span>
+            <span class="small fw-semibold text-dark">{{ active_dispatched_ids|length }} on site / {{ contract_equipments|length }} total</span>
+            {% elif selected_equipment %}
+            <span class="badge bg-dark font-monospace me-1">{{ selected_equipment.asset_code }}</span>
+            <span class="small fw-semibold">{{ selected_equipment.equipment_name }}</span>
+            {% elif contract.equipment %}
             <span class="badge bg-dark font-monospace me-1">{{ contract.equipment.asset_code }}</span>
             <span class="small fw-semibold">{{ contract.equipment.equipment_name }}</span>
             {% else %}
@@ -56,6 +62,33 @@
         </div>
     </div>
 </div>
+
+<!-- Multi-Asset Machine Selector Bar -->
+{% if contract_equipments|length > 1 %}
+<div class="card border-primary shadow-sm mb-4 bg-light">
+    <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong class="text-dark"><i class="bi bi-truck text-primary me-2"></i> Select Machine Asset to Dispatch:</strong>
+                <div class="text-muted small">This contract contains {{ contract_equipments|length }} machinery assets. Click an asset below to select it for departure handover:</div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap" id="equipmentPillsContainer">
+                {% for eq in contract_equipments %}
+                    {% if eq.pk in active_dispatched_ids %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary disabled" title="Already active on site" disabled>
+                            <i class="bi bi-check-circle-fill text-success me-1"></i> {{ eq.asset_code }} (On Rent)
+                        </button>
+                    {% else %}
+                        <button type="button" class="btn btn-sm {% if selected_equipment and selected_equipment.pk == eq.pk %}btn-primary active{% else %}btn-outline-primary{% endif %} eq-select-pill" data-eq-id="{{ eq.pk }}" data-asset-code="{{ eq.asset_code }}" data-meter="{{ eq.current_hour_meter }}">
+                            <i class="bi bi-truck me-1"></i> {{ eq.asset_code }} — {{ eq.equipment_name }} ({{ eq.current_hour_meter }} hrs)
+                        </button>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <form method="post" id="dispatchForm">
     {% csrf_token %}
@@ -343,6 +376,50 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!exists) {
                 const tr = addChecklistRow(key, true, '');
                 tr.querySelector('.checklist-pass-checkbox')?.focus();
+            }
+        });
+    });
+
+    // ── Equipment dynamic selection & hour-meter sync ──
+    const equipmentSelect = document.getElementById('id_equipment');
+    const dispatchMeterInput = document.getElementById('id_dispatch_hour_meter');
+    const eqPills = document.querySelectorAll('.eq-select-pill');
+    let eqMetersMap = {};
+    try {
+        eqMetersMap = {{ equipment_meters_map|safe }};
+    } catch (e) {
+        console.warn('Could not parse equipment_meters_map', e);
+    }
+
+    function onEquipmentChanged(eqId) {
+        if (!eqId) return;
+        const eqData = eqMetersMap[eqId];
+        if (eqData && dispatchMeterInput) {
+            dispatchMeterInput.value = eqData.meter;
+        }
+        eqPills.forEach(pill => {
+            if (pill.dataset.eqId === String(eqId)) {
+                pill.classList.remove('btn-outline-primary');
+                pill.classList.add('btn-primary', 'active');
+            } else {
+                pill.classList.remove('btn-primary', 'active');
+                pill.classList.add('btn-outline-primary');
+            }
+        });
+    }
+
+    if (equipmentSelect) {
+        equipmentSelect.addEventListener('change', function() {
+            onEquipmentChanged(this.value);
+        });
+    }
+
+    eqPills.forEach(pill => {
+        pill.addEventListener('click', function() {
+            const eqId = this.dataset.eqId;
+            if (equipmentSelect) {
+                equipmentSelect.value = eqId;
+                onEquipmentChanged(eqId);
             }
         });
     });

@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -734,6 +735,7 @@ class RentalContractListView(RoleRequiredMixin, ListView):
 class RentalContractDetailView(RoleRequiredMixin, DetailView):
     """
     Rental contract dashboard displaying agreed rates, physical handover history, and return actions.
+    Supports multi-asset contract line item fleet overview and per-machine dispatch/return tracking.
     """
     model = RentalContract
     template_name = 'rentals/contract_detail.html'
@@ -752,10 +754,87 @@ class RentalContractDetailView(RoleRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         contract = self.object
 
-        context['dispatch_logs'] = contract.dispatch_returns.select_related('dispatch_officer', 'return_officer').order_by('-dispatch_datetime')
-        context['active_dispatch'] = contract.dispatch_returns.filter(return_datetime__isnull=True).first()
-        context['can_dispatch'] = contract.status in [RentalContract.Status.ACTIVE, RentalContract.Status.DISPATCHED]
-        context['can_return'] = contract.status == RentalContract.Status.ON_RENT and context['active_dispatch'] is not None
+        dispatch_logs = contract.dispatch_returns.select_related(
+            'equipment', 'equipment__category', 'dispatch_officer', 'return_officer'
+        ).order_by('-dispatch_datetime')
+        context['dispatch_logs'] = dispatch_logs
+
+        # Active open dispatches (on-site machines)
+        active_dispatches = dispatch_logs.filter(return_datetime__isnull=True)
+        context['active_dispatches'] = active_dispatches
+        context['active_dispatch'] = active_dispatches.first()
+
+        # Contract Line Items (fleet assets)
+        contract_items = list(contract.items.select_related('equipment', 'equipment__category').all())
+        context['contract_items'] = contract_items
+
+        # Map active dispatches by equipment ID
+        active_dispatch_by_eq = {d.equipment_id: d for d in active_dispatches}
+        context['active_dispatch_by_eq'] = active_dispatch_by_eq
+
+        # Set of all equipment IDs under this contract
+        if contract_items:
+            all_equipment_ids = {item.equipment_id for item in contract_items}
+        elif contract.equipment_id:
+            all_equipment_ids = {contract.equipment_id}
+        else:
+            all_equipment_ids = set()
+
+        dispatched_equipment_ids = {d.equipment_id for d in active_dispatches}
+
+        # Check if there are undispatched machines
+        has_undispatched_assets = bool(all_equipment_ids - dispatched_equipment_ids)
+        context['has_undispatched_assets'] = has_undispatched_assets
+
+        # Allow dispatch if contract is ACTIVE, DISPATCHED, or ON_RENT, AND there are undispatched assets
+        context['can_dispatch'] = (
+            contract.status in [
+                RentalContract.Status.ACTIVE,
+                RentalContract.Status.DISPATCHED,
+                RentalContract.Status.ON_RENT,
+            ]
+            and has_undispatched_assets
+        )
+        context['can_return'] = active_dispatches.exists()
+
+        # Build enriched items for the template
+        enriched_items = []
+        if contract_items:
+            for item in contract_items:
+                act_d = active_dispatch_by_eq.get(item.equipment_id)
+                enriched_items.append({
+                    'item': item,
+                    'equipment': item.equipment,
+                    'is_on_rent': act_d is not None,
+                    'active_dispatch': act_d,
+                    'rate_applied': item.rate_applied,
+                    'rate_type': item.rate_type,
+                    'subtotal_amount': item.subtotal_amount,
+                })
+        elif contract.equipment:
+            act_d = active_dispatch_by_eq.get(contract.equipment_id)
+            enriched_items.append({
+                'item': None,
+                'equipment': contract.equipment,
+                'is_on_rent': act_d is not None,
+                'active_dispatch': act_d,
+                'rate_applied': contract.agreed_rate,
+                'rate_type': Quotation.RateType.DAILY,
+                'subtotal_amount': contract.agreed_rate,
+            })
+
+        context['enriched_items'] = enriched_items
+        context['total_assets_count'] = len(enriched_items)
+        context['on_rent_count'] = len([i for i in enriched_items if i['is_on_rent']])
+        context['pending_dispatch_count'] = len([i for i in enriched_items if not i['is_on_rent']])
+
+        # Total contract financial valuation
+        if contract_items:
+            context['total_contract_value'] = sum(item.subtotal_amount for item in contract_items)
+        elif contract.quotation:
+            context['total_contract_value'] = contract.quotation.grand_total_amount
+        else:
+            context['total_contract_value'] = contract.agreed_rate
 
         return context
 
@@ -763,6 +842,7 @@ class RentalContractDetailView(RoleRequiredMixin, DetailView):
 class DispatchCreateView(RoleRequiredMixin, CreateView):
     """
     View for yard officers to log equipment mobilization departure and initial telemetry.
+    Supports individual machine asset selection from multi-item contracts.
     """
     model = DispatchReturn
     form_class = DispatchForm
@@ -774,53 +854,101 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
         User.Role.ADMINISTRATOR,
     )
 
+    def get_contract(self):
+        contract_no = self.kwargs.get('contract_no')
+        return get_object_or_404(RentalContract, contract_no=contract_no)
+
     def dispatch(self, request, *args, **kwargs):
-        contract_no = kwargs.get('contract_no') or getattr(self, 'kwargs', {}).get('contract_no')
-        if contract_no:
-            contract = get_object_or_404(RentalContract, contract_no=contract_no)
-            if not contract.equipment:
-                messages.error(request, "No equipment assigned to this contract for dispatch.")
-                return redirect('rentals:contract_detail', contract_no=contract.contract_no)
+        contract = self.get_contract()
+        has_equipment = contract.equipment or contract.items.exists()
+        if not has_equipment:
+            messages.error(request, "No equipment assigned to this contract for dispatch.")
+            return redirect('rentals:contract_detail', contract_no=contract.contract_no)
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['contract'] = self.get_contract()
+        return kwargs
 
     def get_initial(self):
         initial = super().get_initial()
-        contract_no = self.kwargs.get('contract_no')
-        if contract_no:
-            contract = get_object_or_404(RentalContract, contract_no=contract_no)
-            initial['contract'] = contract
-            initial['equipment'] = contract.equipment if contract else None
-            if contract and contract.equipment:
-                initial['dispatch_hour_meter'] = contract.equipment.current_hour_meter
-            else:
-                initial['dispatch_hour_meter'] = 0.0
-            initial['dispatch_fuel_level'] = Decimal('100.00')
-            initial['dispatch_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
+        contract = self.get_contract()
+        initial['contract'] = contract
 
-            current_year = timezone.now().year
-            count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1
-            initial['transaction_id'] = f"TRX-{current_year}-{count:04d}"
+        contract_items = list(contract.items.select_related('equipment').all())
+        contract_equipments = [ci.equipment for ci in contract_items] if contract_items else ([contract.equipment] if contract.equipment else [])
+
+        active_dispatched_ids = set(contract.dispatch_returns.filter(return_datetime__isnull=True).values_list('equipment_id', flat=True))
+        undispatched_eqs = [eq for eq in contract_equipments if eq.pk not in active_dispatched_ids]
+
+        target_code = self.request.GET.get('equipment')
+        selected_eq = None
+        if target_code:
+            selected_eq = next((eq for eq in contract_equipments if eq.asset_code == target_code), None)
+        if not selected_eq and undispatched_eqs:
+            selected_eq = undispatched_eqs[0]
+        if not selected_eq and contract_equipments:
+            selected_eq = contract_equipments[0]
+
+        initial['equipment'] = selected_eq
+        if selected_eq:
+            initial['dispatch_hour_meter'] = selected_eq.current_hour_meter
+        else:
+            initial['dispatch_hour_meter'] = Decimal('0.00')
+
+        initial['dispatch_fuel_level'] = Decimal('100.00')
+        initial['dispatch_datetime'] = timezone.now().strftime('%Y-%m-%dT%H:%M')
+
+        current_year = timezone.now().year
+        count = DispatchReturn.objects.filter(transaction_id__startswith=f"TRX-{current_year}-").count() + 1
+        initial['transaction_id'] = f"TRX-{current_year}-{count:04d}"
 
         return initial
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        contract_no = self.kwargs.get('contract_no')
-        if contract_no:
-            contract = get_object_or_404(RentalContract, contract_no=contract_no)
-            context['contract'] = contract
-            context['equipment'] = contract.equipment if contract else None
+        contract = self.get_contract()
+        context['contract'] = contract
+
+        contract_items = list(contract.items.select_related('equipment', 'equipment__category').all())
+        contract_equipments = [ci.equipment for ci in contract_items] if contract_items else ([contract.equipment] if contract.equipment else [])
+        context['contract_equipments'] = contract_equipments
+
+        active_dispatched_ids = set(contract.dispatch_returns.filter(return_datetime__isnull=True).values_list('equipment_id', flat=True))
+        context['active_dispatched_ids'] = list(active_dispatched_ids)
+
+        target_code = self.request.GET.get('equipment')
+        selected_eq = None
+        if target_code:
+            selected_eq = next((eq for eq in contract_equipments if eq.asset_code == target_code), None)
+        if not selected_eq:
+            undispatched = [eq for eq in contract_equipments if eq.pk not in active_dispatched_ids]
+            selected_eq = undispatched[0] if undispatched else (contract_equipments[0] if contract_equipments else None)
+        context['selected_equipment'] = selected_eq
+
+        context['equipment_meters_map'] = json.dumps({
+            str(eq.pk): {
+                'asset_code': eq.asset_code,
+                'name': eq.equipment_name,
+                'meter': str(eq.current_hour_meter),
+                'is_active_on_site': eq.pk in active_dispatched_ids
+            }
+            for eq in contract_equipments
+        })
+
         return context
 
     def form_valid(self, form):
-        contract_no = self.kwargs.get('contract_no')
-        contract = get_object_or_404(RentalContract, contract_no=contract_no)
+        contract = self.get_contract()
+        chosen_equipment = form.cleaned_data.get('equipment')
 
-        if not contract.equipment:
-            messages.error(self.request, "No equipment assigned to this contract for dispatch.")
-            return redirect('rentals:contract_detail', contract_no=contract.contract_no)
+        if not chosen_equipment:
+            messages.error(self.request, "Please select an equipment asset to dispatch.")
+            return self.form_invalid(form)
 
         dispatch_data = {
+            'equipment': chosen_equipment,
             'dispatch_datetime': form.cleaned_data['dispatch_datetime'],
             'dispatch_hour_meter': form.cleaned_data['dispatch_hour_meter'],
             'dispatch_fuel_level': form.cleaned_data['dispatch_fuel_level'],
@@ -829,8 +957,10 @@ class DispatchCreateView(RoleRequiredMixin, CreateView):
 
         try:
             record = process_equipment_dispatch(contract.contract_no, dispatch_data, user=self.request.user)
-            asset_code = contract.equipment.asset_code if contract.equipment else (record.equipment.asset_code if record.equipment else 'N/A')
-            messages.success(self.request, f"Equipment '{asset_code}' successfully dispatched under Transaction {record.transaction_id}.")
+            messages.success(
+                self.request,
+                f"Equipment '{chosen_equipment.asset_code}' ({chosen_equipment.equipment_name}) successfully dispatched under Transaction {record.transaction_id}."
+            )
             return redirect('rentals:contract_detail', contract_no=contract.contract_no)
         except ValidationError as e:
             messages.error(self.request, str(e))

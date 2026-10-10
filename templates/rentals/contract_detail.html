@@ -67,14 +67,60 @@
 </div>
 
 <div class="row g-4">
-    <!-- Equipment Dossier Card -->
+    <!-- Equipment Dossier Card / Fleet Machinery Summary -->
     <div class="col-12 col-lg-4">
         <div class="card shadow-sm border-0 h-100">
+            {% if total_assets_count > 1 %}
             <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Machine Asset</h5>
-                <span class="badge bg-dark font-monospace">{{ contract.equipment.asset_code }}</span>
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Fleet Machinery ({{ total_assets_count }})</h5>
+                <span class="badge bg-primary font-monospace">{{ total_assets_count }} Units</span>
             </div>
             <div class="card-body">
+                <div class="p-3 bg-light rounded-3 border mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Total Machinery Assets:</span>
+                        <strong class="font-monospace text-dark">{{ total_assets_count }} Units</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Active on Site:</span>
+                        <span class="badge bg-primary">{{ on_rent_count }} Deployed</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted small">Pending Dispatch:</span>
+                        <span class="badge bg-warning text-dark">{{ pending_dispatch_count }} Pending</span>
+                    </div>
+                </div>
+
+                <div class="small">
+                    <div class="fw-bold text-dark mb-2">Fleet Overview:</div>
+                    <div class="d-flex flex-column gap-2">
+                        {% for item_data in enriched_items %}
+                        <div class="d-flex justify-content-between align-items-center p-2 rounded border bg-white">
+                            <div>
+                                <a href="{% url 'fleet:equipment_detail' asset_code=item_data.equipment.asset_code %}" class="badge bg-dark font-monospace text-decoration-none">
+                                    {{ item_data.equipment.asset_code }}
+                                </a>
+                                <span class="ms-1 fw-semibold text-dark">{{ item_data.equipment.equipment_name|truncatechars:18 }}</span>
+                            </div>
+                            {% if item_data.is_on_rent %}
+                                <span class="badge bg-primary">On Rent</span>
+                            {% elif item_data.equipment.status == 'RESERVED' %}
+                                <span class="badge bg-info text-dark">Reserved</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ item_data.equipment.get_status_display }}</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-truck text-primary me-2"></i> Machine Asset</h5>
+                <span class="badge bg-dark font-monospace">{{ contract.equipment.asset_code|default:"N/A" }}</span>
+            </div>
+            <div class="card-body">
+                {% if contract.equipment %}
                 <h6 class="fw-bold text-dark mb-1">{{ contract.equipment.equipment_name }}</h6>
                 <div class="text-muted small mb-3">{{ contract.equipment.category.name|default:"Heavy Machinery" }} | Model: {{ contract.equipment.model_number|default:"Standard" }}</div>
 
@@ -109,7 +155,11 @@
                     <div class="text-muted mb-1"><strong>Serial Number:</strong> {{ contract.equipment.serial_number|default:"N/A" }}</div>
                     <div class="text-muted"><strong>Current Yard/Site:</strong> {{ contract.equipment.current_location|default:"Central Yard" }}</div>
                 </div>
+                {% else %}
+                <div class="text-muted text-center py-4">No equipment assigned.</div>
+                {% endif %}
             </div>
+            {% endif %}
         </div>
     </div>
 
@@ -148,8 +198,8 @@
             <div class="card-body">
                 <div class="p-3 bg-light rounded-3 border mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="text-muted small">Agreed Tariff Rate:</span>
-                        <strong class="font-monospace text-dark">Rs. {{ contract.agreed_rate|floatformat:2 }}</strong>
+                        <span class="text-muted small">{% if total_assets_count > 1 %}Total Tariff Amount:{% else %}Agreed Tariff Rate:{% endif %}</span>
+                        <strong class="font-monospace text-dark">Rs. {{ total_contract_value|floatformat:2 }}</strong>
                     </div>
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="text-muted small">Billing Invoicing Cycle:</span>
@@ -177,10 +227,132 @@
     </div>
 </div>
 
+<!-- Contract Fleet Machinery Assets Table -->
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h5 class="fw-bold mb-0 text-dark">
+                <i class="bi bi-truck text-primary me-2"></i> Contracted Fleet Machinery Assets ({{ enriched_items|length }})
+            </h5>
+            <small class="text-muted">All equipment assets deployed under this rental agreement with individual mobilization status.</small>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                <i class="bi bi-check-circle me-1"></i>{{ on_rent_count }} Active on Site
+            </span>
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1">
+                <i class="bi bi-clock me-1"></i>{{ pending_dispatch_count }} Pending Dispatch
+            </span>
+            {% if can_dispatch %}
+            <a href="{% url 'rentals:dispatch_create' contract_no=contract.contract_no %}" class="btn btn-sm btn-primary">
+                <i class="bi bi-box-arrow-up-right me-1"></i> Dispatch Next Available Asset
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Equipment Asset</th>
+                        <th>Category &amp; Model</th>
+                        <th>Rental Period</th>
+                        <th>Billing Rate</th>
+                        <th>Current Meter</th>
+                        <th class="text-center">Deployment Status</th>
+                        <th class="text-end pe-3">Handover Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item_data in enriched_items %}
+                    <tr>
+                        <td class="ps-3">
+                            <div class="fw-bold text-dark">{{ item_data.equipment.equipment_name }}</div>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <a href="{% url 'fleet:equipment_detail' asset_code=item_data.equipment.asset_code %}" class="badge bg-dark font-monospace text-decoration-none">
+                                    {{ item_data.equipment.asset_code }}
+                                </a>
+                                <span class="badge bg-light text-dark border">SN: {{ item_data.equipment.serial_number|default:"N/A" }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div>{{ item_data.equipment.category.name|default:"Heavy Machinery" }}</div>
+                            <small class="text-muted">{{ item_data.equipment.model_number|default:"Standard" }}</small>
+                        </td>
+                        <td>
+                            {% if item_data.item %}
+                            <div class="small fw-semibold">{{ item_data.item.start_date|date:"M d, Y" }} &rarr; {{ item_data.item.end_date|date:"M d, Y" }}</div>
+                            <small class="text-muted"><i class="bi bi-clock-history me-1"></i> {{ item_data.item.duration_days }} Days</small>
+                            {% else %}
+                            <div class="small fw-semibold">{{ contract.contract_start_date|date:"M d, Y" }} &rarr; {{ contract.contract_end_date|date:"M d, Y" }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="font-monospace fw-semibold">Rs. {{ item_data.rate_applied|floatformat:2 }}</span>
+                            {% if item_data.item %}
+                            <small class="text-muted d-block">Subtotal: Rs. {{ item_data.subtotal_amount|floatformat:2 }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="font-monospace fw-bold"><i class="bi bi-speedometer2 me-1 text-primary"></i>{{ item_data.equipment.current_hour_meter }} hrs</div>
+                            <small class="text-muted">Fuel: {{ item_data.equipment.fuel_level }}%</small>
+                        </td>
+                        <td class="text-center">
+                            {% if item_data.is_on_rent %}
+                                <span class="badge bg-primary">
+                                    <i class="bi bi-truck me-1"></i> Active On Site
+                                </span>
+                                <div class="small text-muted font-monospace mt-1">{{ item_data.active_dispatch.transaction_id }}</div>
+                            {% elif item_data.equipment.status == 'RESERVED' %}
+                                <span class="badge bg-info text-dark">
+                                    <i class="bi bi-bookmark-check me-1"></i> Reserved in Yard
+                                </span>
+                            {% elif item_data.equipment.status == 'AVAILABLE' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i> Available / Returned
+                                </span>
+                            {% elif item_data.equipment.status == 'MAINTENANCE' %}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="bi bi-tools me-1"></i> In Maintenance
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ item_data.equipment.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-3">
+                            {% if item_data.is_on_rent %}
+                                <a href="{% url 'rentals:return_create' transaction_id=item_data.active_dispatch.transaction_id %}" class="btn btn-sm btn-success">
+                                    <i class="bi bi-box-arrow-in-down-left me-1"></i> Check-in Return
+                                </a>
+                            {% else %}
+                                {% if contract.status in 'ACTIVE,DISPATCHED,ON_RENT' %}
+                                <a href="{% url 'rentals:dispatch_create' contract_no=contract.contract_no %}?equipment={{ item_data.equipment.asset_code }}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> Dispatch Machine
+                                </a>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-4 text-muted">
+                            <i class="bi bi-info-circle me-1"></i> No equipment assets assigned to this contract.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Logistics Dispatch & Return Handover History -->
 <div class="card shadow-sm border-0 mt-4">
     <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-        <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history text-secondary me-2"></i> Equipment Physical Handover & Return History</h5>
+        <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history text-secondary me-2"></i> Equipment Physical Handover &amp; Return History</h5>
         <span class="badge bg-light text-dark border">{{ dispatch_logs.count }} Transaction Record(s)</span>
     </div>
     <div class="card-body p-0">
@@ -189,13 +361,14 @@
                 <thead class="table-dark">
                     <tr>
                         <th class="ps-3">Transaction ID</th>
-                        <th>Dispatch Date & Time</th>
-                        <th>Dispatch Meter & Fuel</th>
+                        <th>Equipment Asset</th>
+                        <th>Dispatch Date &amp; Time</th>
+                        <th>Dispatch Meter &amp; Fuel</th>
                         <th>Dispatch Officer</th>
-                        <th>Return Date & Time</th>
-                        <th>Return Meter & Fuel</th>
-                        <th>Hours & Excess</th>
-                        <th class="text-center">Inspection & Status</th>
+                        <th>Return Date &amp; Time</th>
+                        <th>Return Meter &amp; Fuel</th>
+                        <th>Hours &amp; Excess</th>
+                        <th class="text-center">Inspection &amp; Status</th>
                         <th class="text-end pe-3">Action</th>
                     </tr>
                 </thead>
@@ -203,6 +376,10 @@
                     {% for d in dispatch_logs %}
                     <tr>
                         <td class="ps-3 font-monospace fw-bold">{{ d.transaction_id }}</td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ d.equipment.equipment_name }}</div>
+                            <span class="badge bg-dark font-monospace">{{ d.equipment.asset_code }}</span>
+                        </td>
                         <td>
                             <div>{{ d.dispatch_datetime|date:"Y-m-d H:i" }}</div>
                         </td>
@@ -267,7 +444,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-5 text-muted">
+                        <td colspan="10" class="text-center py-5 text-muted">
                             <i class="bi bi-truck-flatbed fs-1 text-secondary d-block mb-2"></i>
                             <p class="mb-2">No dispatch or return transactions recorded yet for this contract.</p>
                             {% if can_dispatch %}
