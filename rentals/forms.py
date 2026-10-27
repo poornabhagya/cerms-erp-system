@@ -307,6 +307,7 @@ class QuotationForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        customer = cleaned_data.get('customer')
         start_date = cleaned_data.get('start_date')
         end_date = cleaned_data.get('end_date')
         transport_cost = cleaned_data.get('estimated_transport_cost') or Decimal('0.00')
@@ -327,6 +328,28 @@ class QuotationForm(forms.ModelForm):
         cleaned_data['subtotal_amount'] = totals['subtotal_amount']
         cleaned_data['total_tax_amount'] = totals['total_tax_amount']
         cleaned_data['grand_total_amount'] = totals['grand_total_amount']
+
+        # Enforce Customer Account Standing & Credit Limits
+        if customer:
+            # 1. Customer Account Standing Check
+            if not customer.is_eligible_for_rentals:
+                error_msg = _(
+                    f"Customer '{customer.company_name}' ({customer.customer_code}) is currently in '{customer.get_status_display()}' status. "
+                    f"Quotations cannot be issued for accounts that are Blocked or Inactive."
+                )
+                self.add_error('customer', error_msg)
+                raise forms.ValidationError(error_msg)
+
+            # 2. Credit Ceiling Assessment
+            grand_total = totals['grand_total_amount']
+            if grand_total > Decimal('0.00'):
+                from .services import validate_customer_credit_limit
+                try:
+                    validate_customer_credit_limit(customer, grand_total, raise_exception=True)
+                except forms.ValidationError as e:
+                    err_msg = e.message if hasattr(e, 'message') else str(e)
+                    self.add_error('customer', err_msg)
+                    raise forms.ValidationError(err_msg)
 
         return cleaned_data
 

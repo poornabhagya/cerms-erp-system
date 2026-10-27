@@ -29,21 +29,38 @@
 </div>
 
 {% if form.errors or item_formset.errors %}
-<div class="alert alert-danger shadow-sm border-0 mb-4">
-    <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i> Please correct the errors below:</div>
-    {{ form.errors }}
-    {{ item_formset.non_form_errors }}
-    {% for item_form in item_formset %}
-        {% if item_form.errors %}
-            <div class="small mt-1">Item {{ forloop.counter }}: {{ item_form.errors }}</div>
-        {% endif %}
-    {% endfor %}
+<div class="alert alert-danger shadow-sm border-start border-danger border-4 mb-4">
+    <div class="fw-bold mb-2 fs-6 text-danger">
+        <i class="bi bi-shield-x-fill me-2 fs-5"></i> Quotation Validation Blocked — Action Required:
+    </div>
+    {% if form.non_field_errors %}
+        <div class="p-2 mb-2 bg-white rounded border border-danger text-danger fw-semibold">
+            {% for error in form.non_field_errors %}
+                <div><i class="bi bi-exclamation-circle-fill me-1"></i> {{ error }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if form.customer.errors %}
+        <div class="p-2 mb-2 bg-white rounded border border-danger text-danger fw-semibold">
+            <div><i class="bi bi-person-x-fill me-1"></i> <strong>Customer Standing / Credit Limit Error:</strong> {{ form.customer.errors|striptags }}</div>
+        </div>
+    {% endif %}
+    <div class="small text-danger">
+        {{ form.errors }}
+        {{ item_formset.non_form_errors }}
+        {% for item_form in item_formset %}
+            {% if item_form.errors %}
+                <div class="mt-1">Item {{ forloop.counter }}: {{ item_form.errors }}</div>
+            {% endif %}
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 
 <form method="post" id="quotationForm">
     {% csrf_token %}
     {{ equipment_status_map|json_script:"equipment-status-data" }}
+    {{ customer_status_map|json_script:"customer-status-data" }}
 
     <!-- 1. Header Scope Card -->
     <div class="card shadow-sm border-0 mb-4">
@@ -62,7 +79,8 @@
                 <div class="col-12 col-md-4">
                     <label class="form-label fw-semibold" for="id_customer">Customer <span class="text-danger">*</span></label>
                     {{ form.customer }}
-                    {% if form.customer.errors %}<div class="text-danger small mt-1">{{ form.customer.errors }}</div>{% endif %}
+                    {% if form.customer.errors %}<div class="text-danger small mt-1 fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ form.customer.errors|striptags }}</div>{% endif %}
+                    <div id="customer-credit-info" class="mt-2" style="display: none;"></div>
                 </div>
                 <div class="col-12 col-md-4">
                     <label class="form-label fw-semibold" for="id_project_site">Project Site <span class="text-danger">*</span></label>
@@ -320,6 +338,54 @@ document.addEventListener('DOMContentLoaded', function () {
     const equipmentDataEl = document.getElementById('equipment-status-data');
     const equipmentStatusMap = equipmentDataEl ? JSON.parse(equipmentDataEl.textContent || '{}') : {};
 
+    const customerDataEl = document.getElementById('customer-status-data');
+    const customerStatusMap = customerDataEl ? JSON.parse(customerDataEl.textContent || '{}') : {};
+    const customerSelect = document.getElementById('id_customer');
+    const creditInfoBox = document.getElementById('customer-credit-info');
+
+    function updateCustomerCreditFeedback() {
+        if (!creditInfoBox || !customerSelect) return;
+        const custId = customerSelect.value;
+        const custData = custId ? customerStatusMap[custId] : null;
+
+        if (!custData) {
+            creditInfoBox.style.display = 'none';
+            creditInfoBox.innerHTML = '';
+            return;
+        }
+
+        creditInfoBox.style.display = 'block';
+
+        if (!custData.is_eligible) {
+            creditInfoBox.innerHTML = `
+                <div class="alert alert-danger py-1 px-2 small mb-0 d-flex align-items-center">
+                    <i class="bi bi-x-octagon-fill me-2 fs-6"></i>
+                    <div><strong>Account Blocked (${custData.status_display}):</strong> Cannot issue new orders.</div>
+                </div>
+            `;
+            return;
+        }
+
+        const grandTotal = parseFloat(grandTotalInput ? grandTotalInput.value : 0) || 0;
+        const availableCredit = custData.available_credit;
+        const isExceeded = grandTotal > availableCredit;
+
+        if (isExceeded) {
+            creditInfoBox.innerHTML = `
+                <div class="alert alert-danger py-1 px-2 small mb-0">
+                    <i class="bi bi-shield-exclamation me-1 fw-bold"></i>
+                    <strong>Credit Exceeded:</strong> Total (LKR ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}) exceeds Available Credit (LKR ${availableCredit.toLocaleString(undefined, {minimumFractionDigits: 2})}).
+                </div>
+            `;
+        } else {
+            creditInfoBox.innerHTML = `
+                <div class="text-success small fw-semibold">
+                    <i class="bi bi-shield-check me-1"></i> Available Credit: LKR ${availableCredit.toLocaleString(undefined, {minimumFractionDigits: 2})} (Limit: LKR ${custData.credit_limit.toLocaleString(undefined, {minimumFractionDigits: 2})})
+                </div>
+            `;
+        }
+    }
+
     function updateMaintenanceWarning(row) {
         if (row.style.display === 'none') return;
         const eqSelect = row.querySelector('.item-equipment');
@@ -430,6 +496,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (grandTotalInput) {
             grandTotalInput.value = grandTotal.toFixed(2);
         }
+
+        updateCustomerCreditFeedback();
     }
 
     // Dynamic Row Addition
@@ -513,8 +581,15 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    if (customerSelect) {
+        customerSelect.addEventListener('change', function () {
+            updateCustomerCreditFeedback();
+        });
+    }
+
     // Initial calculation on page load
     calculateAllTotals();
+    updateCustomerCreditFeedback();
 });
 </script>
 {% endblock %}

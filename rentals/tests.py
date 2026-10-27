@@ -1893,6 +1893,242 @@ class BifurcatedDamageAndMaintenanceTestCase(TestCase):
         self.assertIn('Minor Damage', contract_html)
 
 
+class CreditLimitAndStandingEnforcementTests(TestCase):
+    """
+    Unit and integration tests asserting strict enforcement of customer credit limits
+    and account statuses (ACTIVE, BLOCKED, INACTIVE) across forms, services, and views.
+    """
+    def setUp(self):
+        self.rental_officer = User.objects.create_user(
+            username='ro_credit_tester',
+            email='ro_credit@cerms.com',
+            password='Password123!',
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.manager_user = User.objects.create_user(
+            username='mgmt_credit_tester',
+            email='mgmt_credit@cerms.com',
+            password='Password123!',
+            role=User.Role.MANAGEMENT
+        )
+
+        self.category = Category.objects.create(name="Excavators", code="EXC")
+        self.equipment = Equipment.objects.create(
+            asset_code="EQ-CAT-320-CRD",
+            equipment_name="CAT 320D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT320D-CRD-01",
+            manufacture_year=2023,
+            purchase_cost=Decimal("25000000.00"),
+            purchase_date=date(2023, 1, 1),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # Customer with LKR 500,000 credit limit and 0 balance
+        self.customer = Customer.objects.create(
+            customer_code="CUST-CRD-001",
+            company_name="Credit Test Corp",
+            contact_person="Ravi Perera",
+            phone="+94771234567",
+            email="ravi@credittest.lk",
+            billing_address="Colombo 03",
+            credit_limit=Decimal("500000.00"),
+            current_outstanding_balance=Decimal("0.00"),
+            status=Customer.Status.ACTIVE
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-CRD-01",
+            customer=self.customer,
+            project_name="Commercial Tower Project",
+            site_address="Colombo 02",
+            status=ProjectSite.Status.ACTIVE
+        )
+
+    def test_quotation_form_blocked_when_credit_limit_exceeded(self):
+        """QuotationForm.clean() must raise ValidationError when grand total exceeds available credit."""
+        form = QuotationForm(data={
+            'quotation_no': 'QT-CRD-001',
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'start_date': date(2026, 11, 1),
+            'end_date': date(2026, 11, 10),
+            'rate_type': Quotation.RateType.DAILY,
+            'subtotal_amount': '600000.00',  # Exceeds 500,000 limit
+            'estimated_transport_cost': '0.00',
+            'security_deposit_required': '0.00',
+            'discount_percentage': '0.00',
+            'total_tax_amount': '108000.00',
+            'grand_total_amount': '708000.00',
+            'status': Quotation.Status.DRAFT,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('customer', form.errors)
+        self.assertTrue(any('Credit limit exceeded' in e for e in form.errors['customer']))
+
+    def test_quotation_form_allowed_within_credit_limit(self):
+        """QuotationForm.clean() succeeds when grand total is within available credit."""
+        form = QuotationForm(data={
+            'quotation_no': 'QT-CRD-002',
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'start_date': date(2026, 11, 1),
+            'end_date': date(2026, 11, 5),
+            'rate_type': Quotation.RateType.DAILY,
+            'subtotal_amount': '200000.00',
+            'estimated_transport_cost': '0.00',
+            'security_deposit_required': '0.00',
+            'discount_percentage': '0.00',
+            'total_tax_amount': '36000.00',
+            'grand_total_amount': '236000.00',  # Well within 500,000 limit
+            'status': Quotation.Status.DRAFT,
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_quotation_form_blocked_for_blocked_or_inactive_customer(self):
+        """QuotationForm.clean() rejects customers with BLOCKED or INACTIVE status."""
+        self.customer.status = Customer.Status.BLOCKED
+        self.customer.save()
+
+        form = QuotationForm(data={
+            'quotation_no': 'QT-CRD-003',
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'start_date': date(2026, 11, 1),
+            'end_date': date(2026, 11, 5),
+            'rate_type': Quotation.RateType.DAILY,
+            'subtotal_amount': '10000.00',
+            'estimated_transport_cost': '0.00',
+            'security_deposit_required': '0.00',
+            'discount_percentage': '0.00',
+            'status': Quotation.Status.DRAFT,
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('customer', form.errors)
+        self.assertTrue(any('Blocked' in e for e in form.errors['customer']))
+
+    def test_quotation_create_view_blocks_credit_limit_exceeded(self):
+        """QuotationCreateView POST rejects saving quotation exceeding credit limit."""
+        self.client.force_login(self.rental_officer)
+        post_data = {
+            'quotation_no': 'QT-CRD-004',
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'start_date': '2026-11-01',
+            'end_date': '2026-11-10',
+            'rate_type': 'DAILY',
+            'subtotal_amount': '600000.00',
+            'estimated_transport_cost': '0.00',
+            'security_deposit_required': '0.00',
+            'discount_percentage': '0.00',
+            'total_tax_amount': '108000.00',
+            'grand_total_amount': '708000.00',
+            'status': 'DRAFT',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-equipment': self.equipment.pk,
+            'items-0-start_date': '2026-11-01',
+            'items-0-end_date': '2026-11-10',
+            'items-0-rate_applied': '60000.00',
+            'items-0-rate_type': 'DAILY',
+            'items-0-subtotal_amount': '600000.00',
+        }
+        res = self.client.post('/rentals/quotations/create/', post_data)
+        self.assertEqual(res.status_code, 200)  # Form re-rendered with validation error
+        self.assertFalse(Quotation.objects.filter(quotation_no='QT-CRD-004').exists())
+
+    def test_convert_quotation_to_contract_blocked_if_customer_blocked(self):
+        """convert_quotation_to_contract strictly raises ValidationError if customer is BLOCKED."""
+        quote = Quotation.objects.create(
+            quotation_no="QT-CRD-BLOCKED-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal("100000.00"),
+            grand_total_amount=Decimal("118000.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.equipment,
+            rate_applied=Decimal("20000.00"),
+            subtotal_amount=Decimal("100000.00")
+        )
+
+        # Block customer after quote was accepted
+        self.customer.status = Customer.Status.BLOCKED
+        self.customer.save()
+
+        with self.assertRaises(ValidationError) as ctx:
+            convert_quotation_to_contract(quote.quotation_no, user=self.manager_user)
+        self.assertIn("Blocked", str(ctx.exception))
+        self.assertFalse(hasattr(quote, 'contract'))
+
+    def test_convert_quotation_to_contract_blocked_if_credit_limit_exceeded(self):
+        """convert_quotation_to_contract strictly raises ValidationError if exposure exceeds credit limit."""
+        # Customer has 500,000 limit. We add 450,000 existing balance.
+        self.customer.current_outstanding_balance = Decimal("450000.00")
+        self.customer.save()
+
+        # New quote grand total is 118,000. 450k + 118k = 568k > 500k limit.
+        quote = Quotation.objects.create(
+            quotation_no="QT-CRD-EXCEED-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal("100000.00"),
+            grand_total_amount=Decimal("118000.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.equipment,
+            rate_applied=Decimal("20000.00"),
+            subtotal_amount=Decimal("100000.00")
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            convert_quotation_to_contract(quote.quotation_no, user=self.manager_user)
+        self.assertIn("Credit limit exceeded", str(ctx.exception))
+        self.assertFalse(hasattr(quote, 'contract'))
+
+    def test_convert_quotation_to_contract_succeeds_within_credit_limit(self):
+        """convert_quotation_to_contract succeeds and creates contract when customer is ACTIVE and within credit limit."""
+        self.customer.current_outstanding_balance = Decimal("100000.00")
+        self.customer.save()
+
+        quote = Quotation.objects.create(
+            quotation_no="QT-CRD-OK-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            subtotal_amount=Decimal("100000.00"),
+            grand_total_amount=Decimal("118000.00"),  # 100k + 118k = 218k <= 500k
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=quote,
+            equipment=self.equipment,
+            rate_applied=Decimal("20000.00"),
+            subtotal_amount=Decimal("100000.00")
+        )
+
+        contract = convert_quotation_to_contract(quote.quotation_no, user=self.manager_user)
+        self.assertIsNotNone(contract)
+        self.assertEqual(contract.customer, self.customer)
+        self.assertEqual(contract.status, RentalContract.Status.ACTIVE)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quotation.Status.CONVERTED)
+
+
+
 
 
 

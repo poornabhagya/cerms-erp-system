@@ -476,6 +476,19 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
             }
             for eq in all_equipment
         }
+        context['customer_status_map'] = {
+            c.pk: {
+                'code': c.customer_code,
+                'company_name': c.company_name,
+                'status': c.status,
+                'status_display': c.get_status_display(),
+                'credit_limit': float(c.credit_limit),
+                'outstanding_balance': float(c.current_outstanding_balance),
+                'available_credit': float(c.available_credit),
+                'is_eligible': c.is_eligible_for_rentals,
+            }
+            for c in Customer.objects.all()
+        }
         if self.request.POST:
             context['item_formset'] = QuotationItemFormSet(self.request.POST)
         else:
@@ -514,6 +527,18 @@ class QuotationCreateView(RoleRequiredMixin, CreateView):
                 self.object.subtotal_amount = totals['base_tariff']
                 self.object.total_tax_amount = totals['tax_amount']
                 self.object.grand_total_amount = totals['grand_total_amount']
+
+                # Enforce Customer Account Standing & Credit Limits post line-item calculation
+                from .services import validate_customer_credit_limit
+                try:
+                    validate_customer_credit_limit(self.object.customer, self.object.grand_total_amount, raise_exception=True)
+                except ValidationError as e:
+                    err_text = e.message if hasattr(e, 'message') else str(e)
+                    form.add_error('customer', err_text)
+                    form.add_error(None, err_text)
+                    transaction.set_rollback(True)
+                    return self.form_invalid(form)
+
                 self.object.save(update_fields=['subtotal_amount', 'total_tax_amount', 'grand_total_amount', 'updated_at'])
 
             messages.success(self.request, f"Quotation '{self.object.quotation_no}' generated successfully.")
@@ -547,6 +572,19 @@ class QuotationUpdateView(RoleRequiredMixin, UpdateView):
             }
             for eq in all_equipment
         }
+        context['customer_status_map'] = {
+            c.pk: {
+                'code': c.customer_code,
+                'company_name': c.company_name,
+                'status': c.status,
+                'status_display': c.get_status_display(),
+                'credit_limit': float(c.credit_limit),
+                'outstanding_balance': float(c.current_outstanding_balance),
+                'available_credit': float(c.available_credit),
+                'is_eligible': c.is_eligible_for_rentals,
+            }
+            for c in Customer.objects.all()
+        }
         if self.request.POST:
             context['item_formset'] = QuotationItemFormSet(self.request.POST, instance=self.object)
         else:
@@ -568,11 +606,24 @@ class QuotationUpdateView(RoleRequiredMixin, UpdateView):
                 self.object.subtotal_amount = totals['base_tariff']
                 self.object.total_tax_amount = totals['tax_amount']
                 self.object.grand_total_amount = totals['grand_total_amount']
+
+                # Enforce Customer Account Standing & Credit Limits post line-item calculation
+                from .services import validate_customer_credit_limit
+                try:
+                    validate_customer_credit_limit(self.object.customer, self.object.grand_total_amount, raise_exception=True)
+                except ValidationError as e:
+                    err_text = e.message if hasattr(e, 'message') else str(e)
+                    form.add_error('customer', err_text)
+                    form.add_error(None, err_text)
+                    transaction.set_rollback(True)
+                    return self.form_invalid(form)
+
                 self.object.save(update_fields=['subtotal_amount', 'total_tax_amount', 'grand_total_amount', 'updated_at'])
 
             messages.success(self.request, f"Quotation '{self.object.quotation_no}' updated successfully.")
             return redirect('rentals:quotation_detail', quotation_no=self.object.quotation_no)
         else:
+            return self.render_to_response(self.get_context_data(form=form))
             return self.render_to_response(self.get_context_data(form=form))
 
 

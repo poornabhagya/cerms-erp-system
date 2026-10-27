@@ -141,7 +141,7 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
         }
 
     # 2. Credit Ceiling Assessment
-    if credit_limit > Decimal('0.00') and projected_exposure > credit_limit:
+    if projected_exposure > credit_limit:
         excess = projected_exposure - credit_limit
         warning_msg = _(
             f"Credit limit exceeded for '{customer.company_name}'. "
@@ -199,10 +199,12 @@ def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: s
 
     Step 4.2 State Machine Workflow:
     1. Validates quotation status is ACCEPTED (or approved).
-    2. Creates RentalContract with agreed financial values.
-    3. Creates RentalContractItem records for each quoted equipment asset.
-    4. Transitions each Equipment.status -> RESERVED.
-    5. Marks Quotation.status -> CONVERTED.
+    2. Validates customer operational standing (not BLOCKED or INACTIVE).
+    3. Validates customer credit limit compliance.
+    4. Creates RentalContract with agreed financial values.
+    5. Creates RentalContractItem records for each quoted equipment asset.
+    6. Transitions each Equipment.status -> RESERVED.
+    7. Marks Quotation.status -> CONVERTED.
     """
     with transaction.atomic():
         quotation = Quotation.objects.select_for_update().get(quotation_no=quotation_id)
@@ -212,6 +214,20 @@ def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: s
 
         if quotation.status not in [Quotation.Status.ACCEPTED, Quotation.Status.APPROVED_BY_MANAGEMENT]:
             raise ValidationError(f"Cannot convert quotation with status '{quotation.get_status_display()}'. Must be in 'Accepted' or 'Approved' status.")
+
+        # Enforce Customer Operational Standing & Credit Limit
+        customer = quotation.customer
+        if not customer.is_eligible_for_rentals:
+            raise ValidationError(
+                f"Cannot convert quotation. Customer '{customer.company_name}' ({customer.customer_code}) "
+                f"is currently in '{customer.get_status_display()}' status."
+            )
+
+        validate_customer_credit_limit(
+            customer=customer,
+            new_quotation_amount=quotation.grand_total_amount,
+            raise_exception=True
+        )
 
         # Generate unique contract number
         current_year = timezone.now().year
