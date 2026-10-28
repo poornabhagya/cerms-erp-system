@@ -195,6 +195,35 @@ def validate_customer_credit_limit(customer: Customer, new_quotation_amount: Dec
     }
 
 
+def validate_equipment_availability(
+    equipment: Equipment,
+    start_date,
+    end_date,
+    exclude_contract_id=None,
+    exclude_quotation_id=None,
+    raise_exception: bool = True
+) -> bool:
+    """
+    Validates that the given equipment asset is unreserved and free of conflicting
+    active single-asset and multi-asset contracts (RentalContractItem) and
+    reserved quotations (QuotationItem with APPROVED_BY_MANAGEMENT, SENT_TO_CUSTOMER, or ACCEPTED).
+    Raises ValidationError if raise_exception is True and equipment is unavailable.
+    """
+    if not equipment.is_available_for_dates(
+        start_date=start_date,
+        end_date=end_date,
+        exclude_contract_id=exclude_contract_id,
+        exclude_quotation_id=exclude_quotation_id,
+    ):
+        if raise_exception:
+            raise ValidationError(
+                f"Equipment '{equipment.equipment_name}' ({equipment.asset_code}) "
+                f"is already booked or reserved for the requested dates ({start_date} to {end_date})."
+            )
+        return False
+    return True
+
+
 def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: str = 'MONTHLY') -> RentalContract:
     """
     Converts an accepted commercial quotation into a legally binding RentalContract.
@@ -205,10 +234,11 @@ def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: s
     1. Validates quotation status is ACCEPTED (or approved).
     2. Validates customer operational standing (not BLOCKED or INACTIVE).
     3. Validates customer credit limit compliance.
-    4. Creates RentalContract with agreed financial values.
-    5. Creates RentalContractItem records for each quoted equipment asset.
-    6. Transitions each Equipment.status -> RESERVED.
-    7. Marks Quotation.status -> CONVERTED.
+    4. Validates equipment availability (prevents double-booking against active contracts or approved quotations).
+    5. Creates RentalContract with agreed financial values.
+    6. Creates RentalContractItem records for each quoted equipment asset.
+    7. Transitions each Equipment.status -> RESERVED.
+    8. Marks Quotation.status -> CONVERTED.
     """
     with transaction.atomic():
         quotation = Quotation.objects.select_for_update().get(quotation_no=quotation_id)
@@ -233,15 +263,27 @@ def convert_quotation_to_contract(quotation_id: str, user=None, billing_cycle: s
             raise_exception=True
         )
 
-        # Generate unique contract number
-        current_year = timezone.now().year
-        contract_count = RentalContract.objects.filter(contract_no__startswith=f"CNT-{current_year}-").count() + 1
-        contract_no = f"CNT-{current_year}-{contract_count:04d}"
-
         # Determine primary equipment and rate for legacy field compatibility
         items = list(quotation.items.select_related('equipment').all())
         primary_equipment = items[0].equipment if items else None
         agreed_rate = items[0].rate_applied if items else Decimal('0.00')
+
+        # Enforce strict double-booking check across all quoted assets
+        for item in items:
+            item_start = item.item_start_date or quotation.start_date
+            item_end = item.item_end_date or quotation.end_date
+            validate_equipment_availability(
+                equipment=item.equipment,
+                start_date=item_start,
+                end_date=item_end,
+                exclude_quotation_id=quotation.pk,
+                raise_exception=True
+            )
+
+        # Generate unique contract number
+        current_year = timezone.now().year
+        contract_count = RentalContract.objects.filter(contract_no__startswith=f"CNT-{current_year}-").count() + 1
+        contract_no = f"CNT-{current_year}-{contract_count:04d}"
 
         # Create Contract
         contract = RentalContract.objects.create(

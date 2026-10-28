@@ -1,3 +1,4 @@
+from datetime import datetime, date
 from decimal import Decimal
 from django import forms
 from django.forms import inlineformset_factory
@@ -409,19 +410,53 @@ class QuotationItemForm(forms.ModelForm):
         rate_applied = cleaned_data.get('rate_applied') or Decimal('0.00')
 
         if equipment:
+            # Resolve effective dates: item start/end or parent quotation start/end
+            item_start = start_date
+            item_end = end_date
+
+            if not item_start:
+                if self.instance and self.instance.quotation_id and self.instance.quotation.start_date:
+                    item_start = self.instance.quotation.start_date
+                elif self.data and self.data.get('start_date'):
+                    try:
+                        item_start = datetime.strptime(self.data.get('start_date'), '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        pass
+
+            if not item_end:
+                if self.instance and self.instance.quotation_id and self.instance.quotation.end_date:
+                    item_end = self.instance.quotation.end_date
+                elif self.data and self.data.get('end_date'):
+                    try:
+                        item_end = datetime.strptime(self.data.get('end_date'), '%Y-%m-%d').date()
+                    except (ValueError, TypeError):
+                        pass
+
             days = 1
-            if start_date and end_date and end_date >= start_date:
-                days = max(1, (end_date - start_date).days + 1)
+            if item_start and item_end and item_end >= item_start:
+                days = max(1, (item_end - item_start).days + 1)
             calculated_subtotal = (Decimal(days) * Decimal(str(rate_applied))).quantize(Decimal('0.01'))
             if not cleaned_data.get('subtotal_amount') or cleaned_data.get('subtotal_amount') == Decimal('0.00'):
                 cleaned_data['subtotal_amount'] = calculated_subtotal
+
+            # Double-booking check: enforce equipment availability for requested dates
+            if item_start and item_end:
+                exclude_q = self.instance.quotation_id if self.instance and self.instance.quotation_id else None
+                if not equipment.is_available_for_dates(item_start, item_end, exclude_quotation_id=exclude_q):
+                    error_msg = _(
+                        f"Equipment '{equipment.equipment_name}' ({equipment.asset_code}) is already booked or reserved "
+                        f"for the selected dates ({item_start} to {item_end})."
+                    )
+                    self.add_error('equipment', error_msg)
+                    raise forms.ValidationError(error_msg)
+
         return cleaned_data
 
 
 class BaseQuotationItemFormSet(forms.BaseInlineFormSet):
     """
-    Custom inline formset for QuotationItems guaranteeing at least one valid line item
-    and preventing injection of mandatory blank rows on existing quotations.
+    Custom inline formset for QuotationItems guaranteeing at least one valid line item,
+    preventing intra-formset duplicate overlapping bookings, and validating real-time fleet availability.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -435,11 +470,55 @@ class BaseQuotationItemFormSet(forms.BaseInlineFormSet):
             return
 
         valid_items_count = 0
+        seen_equipment_ranges = {}
+
+        # Resolve parent quotation default dates if available
+        parent_start = self.instance.start_date if self.instance and self.instance.start_date else None
+        parent_end = self.instance.end_date if self.instance and self.instance.end_date else None
+        if not parent_start and self.data and self.data.get('start_date'):
+            try:
+                parent_start = datetime.strptime(self.data.get('start_date'), '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                pass
+        if not parent_end and self.data and self.data.get('end_date'):
+            try:
+                parent_end = datetime.strptime(self.data.get('end_date'), '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                pass
+
+        exclude_q = self.instance.pk if self.instance and self.instance.pk else None
+
         for form in self.forms:
             if not hasattr(form, 'cleaned_data') or self._should_delete_form(form):
                 continue
-            if form.cleaned_data.get('equipment'):
-                valid_items_count += 1
+            equipment = form.cleaned_data.get('equipment')
+            if not equipment:
+                continue
+
+            valid_items_count += 1
+            item_start = form.cleaned_data.get('start_date') or parent_start
+            item_end = form.cleaned_data.get('end_date') or parent_end
+
+            if item_start and item_end:
+                # 1. Prevent duplicate booking of same machine within the same quotation for overlapping dates
+                if equipment.pk in seen_equipment_ranges:
+                    for (prev_s, prev_e) in seen_equipment_ranges[equipment.pk]:
+                        if item_start <= prev_e and item_end >= prev_s:
+                            msg = _(f"Equipment '{equipment.equipment_name}' ({equipment.asset_code}) cannot be added multiple times for overlapping date ranges.")
+                            form.add_error('equipment', msg)
+                            raise forms.ValidationError(msg)
+                    seen_equipment_ranges[equipment.pk].append((item_start, item_end))
+                else:
+                    seen_equipment_ranges[equipment.pk] = [(item_start, item_end)]
+
+                # 2. Prevent booking equipment that conflicts with active contracts or reserved quotations
+                if not equipment.is_available_for_dates(item_start, item_end, exclude_quotation_id=exclude_q):
+                    msg = _(
+                        f"Equipment '{equipment.equipment_name}' ({equipment.asset_code}) is already booked or reserved "
+                        f"for the selected dates ({item_start} to {item_end})."
+                    )
+                    form.add_error('equipment', msg)
+                    raise forms.ValidationError(msg)
 
         if valid_items_count == 0:
             raise forms.ValidationError(_("At least one equipment asset line item must be specified for the quotation."))
@@ -513,6 +592,31 @@ class RentalContractForm(forms.ModelForm):
                 css_class='bg-white p-4 rounded-3 border shadow-sm mb-4'
             )
         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        equipment = cleaned_data.get('equipment')
+        start_date = cleaned_data.get('contract_start_date')
+        end_date = cleaned_data.get('contract_end_date')
+        quotation = cleaned_data.get('quotation')
+
+        exclude_contract_id = self.instance.pk if self.instance and self.instance.pk else None
+        exclude_quotation_id = quotation.pk if quotation else None
+
+        if equipment and start_date and end_date:
+            if not equipment.is_available_for_dates(
+                start_date, end_date,
+                exclude_contract_id=exclude_contract_id,
+                exclude_quotation_id=exclude_quotation_id
+            ):
+                msg = _(
+                    f"Equipment '{equipment.equipment_name}' ({equipment.asset_code}) is already booked or reserved "
+                    f"for the selected contract period ({start_date} to {end_date})."
+                )
+                self.add_error('equipment', msg)
+                raise forms.ValidationError(msg)
+
+        return cleaned_data
 
 
 class DispatchForm(forms.ModelForm):

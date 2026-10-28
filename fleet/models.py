@@ -320,25 +320,85 @@ class Equipment(TimeStampedModel):
         """Returns True if the machine is physically ready for rental dispatch."""
         return self.status == self.Status.AVAILABLE
 
-    def is_available_for_dates(self, start_date, end_date) -> bool:
+    def is_available_for_dates(self, start_date, end_date, exclude_contract_id=None, exclude_quotation_id=None) -> bool:
         """
         Validates if the equipment is unreserved and free of conflicting active contracts
-        for the given date range.
+        and reserved quotations for the given date range.
+        Checks both single-asset and multi-asset contracts (RentalContractItem)
+        as well as reserved quotations (QuotationItem with APPROVED_BY_MANAGEMENT, SENT_TO_CUSTOMER, or ACCEPTED status).
         """
-        if self.status in [self.Status.MAINTENANCE, self.Status.BREAKDOWN, self.Status.INACTIVE]:
+        if self.status == self.Status.INACTIVE:
             return False
 
-        # Check for overlapping contracts from rentals app (using string model query to avoid circular imports)
+        from datetime import date, datetime
+        if isinstance(start_date, str):
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                return False
+        if isinstance(end_date, str):
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                return False
+
+        if not start_date or not end_date or start_date > end_date:
+            return False
+
         from django.apps import apps
+        from django.db.models import Q
+
+        # 1. Check for overlapping multi-asset contract items (RentalContractItem)
+        RentalContractItem = apps.get_model('rentals', 'RentalContractItem', require_ready=False)
+        if RentalContractItem:
+            contract_item_conflicts = RentalContractItem.objects.filter(
+                equipment=self,
+                contract__status__in=['ACTIVE', 'DISPATCHED', 'ON_RENT']
+            ).filter(
+                (Q(start_date__isnull=False) & Q(end_date__isnull=False) & Q(start_date__lte=end_date, end_date__gte=start_date)) |
+                ((Q(start_date__isnull=True) | Q(end_date__isnull=True)) & Q(contract__contract_start_date__lte=end_date, contract__contract_end_date__gte=start_date))
+            )
+            if exclude_contract_id:
+                c_pk = exclude_contract_id.pk if hasattr(exclude_contract_id, 'pk') else exclude_contract_id
+                contract_item_conflicts = contract_item_conflicts.exclude(contract__pk=c_pk)
+
+            if contract_item_conflicts.exists():
+                return False
+
+        # 2. Check for direct single-asset contracts (RentalContract.equipment)
         RentalContract = apps.get_model('rentals', 'RentalContract', require_ready=False)
         if RentalContract:
-            conflicting_contracts = RentalContract.objects.filter(
+            direct_conflicts = RentalContract.objects.filter(
                 equipment=self,
                 status__in=['ACTIVE', 'DISPATCHED', 'ON_RENT'],
                 contract_start_date__lte=end_date,
                 contract_end_date__gte=start_date
-            ).exists()
-            if conflicting_contracts:
+            )
+            if exclude_contract_id:
+                c_pk = exclude_contract_id.pk if hasattr(exclude_contract_id, 'pk') else exclude_contract_id
+                direct_conflicts = direct_conflicts.exclude(pk=c_pk)
+
+            if direct_conflicts.exists():
+                return False
+
+        # 3. Check for overlapping reserved quotations (QuotationItem with APPROVED_BY_MANAGEMENT, SENT_TO_CUSTOMER, or ACCEPTED)
+        QuotationItem = apps.get_model('rentals', 'QuotationItem', require_ready=False)
+        if QuotationItem:
+            q_item_dates = (
+                (Q(start_date__isnull=False) & Q(end_date__isnull=False) & Q(start_date__lte=end_date, end_date__gte=start_date)) |
+                ((Q(start_date__isnull=True) | Q(end_date__isnull=True)) & Q(quotation__start_date__lte=end_date, quotation__end_date__gte=start_date))
+            )
+            quotation_conflicts = QuotationItem.objects.filter(
+                equipment=self,
+                quotation__status__in=['APPROVED_BY_MANAGEMENT', 'SENT_TO_CUSTOMER', 'ACCEPTED'],
+                quotation__contract__isnull=True
+            ).filter(q_item_dates)
+
+            if exclude_quotation_id:
+                q_pk = exclude_quotation_id.pk if hasattr(exclude_quotation_id, 'pk') else exclude_quotation_id
+                quotation_conflicts = quotation_conflicts.exclude(quotation__pk=q_pk)
+
+            if quotation_conflicts.exists():
                 return False
 
         return True

@@ -674,6 +674,20 @@ class QuotationStatusTransitionView(RoleRequiredMixin, View):
                 if request.user.role not in [User.Role.MANAGEMENT, User.Role.ADMINISTRATOR] and not request.user.is_superuser:
                     messages.error(request, "Only Management or Administrators can approve commercial quotations.")
                     return redirect('rentals:quotation_detail', quotation_no=quotation.quotation_no)
+
+                # Validate equipment availability before approving & reserving
+                for item in quotation.items.select_related('equipment').all():
+                    item_start = item.item_start_date or quotation.start_date
+                    item_end = item.item_end_date or quotation.end_date
+                    if not item.equipment.is_available_for_dates(
+                        item_start, item_end,
+                        exclude_quotation_id=quotation.pk
+                    ):
+                        raise ValidationError(
+                            f"Cannot approve quotation '{quotation.quotation_no}'. Equipment '{item.equipment.equipment_name}' "
+                            f"({item.equipment.asset_code}) is already booked or reserved for the requested dates ({item_start} to {item_end})."
+                        )
+
                 quotation.status = Quotation.Status.APPROVED_BY_MANAGEMENT
                 quotation.approved_by = request.user
                 quotation.approval_date = timezone.now()
@@ -686,6 +700,19 @@ class QuotationStatusTransitionView(RoleRequiredMixin, View):
                 messages.success(request, f"Quotation '{quotation.quotation_no}' marked as Sent to Customer.")
 
             elif action == 'mark_accepted':
+                # Validate equipment availability before accepting & reserving
+                for item in quotation.items.select_related('equipment').all():
+                    item_start = item.item_start_date or quotation.start_date
+                    item_end = item.item_end_date or quotation.end_date
+                    if not item.equipment.is_available_for_dates(
+                        item_start, item_end,
+                        exclude_quotation_id=quotation.pk
+                    ):
+                        raise ValidationError(
+                            f"Cannot mark quotation as accepted. Equipment '{item.equipment.equipment_name}' "
+                            f"({item.equipment.asset_code}) is already booked or reserved for the requested dates ({item_start} to {item_end})."
+                        )
+
                 quotation.status = Quotation.Status.ACCEPTED
                 quotation.save(update_fields=['status', 'updated_at'])
                 messages.success(request, f"Quotation '{quotation.quotation_no}' accepted by Customer.")

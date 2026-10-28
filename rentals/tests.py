@@ -12,9 +12,10 @@ from .services import (
     calculate_quotation_totals,
     convert_quotation_to_contract,
     render_quotation_to_pdf,
-    render_contract_to_pdf
+    render_contract_to_pdf,
+    validate_equipment_availability,
 )
-from .forms import QuotationForm, QuotationItemForm, QuotationItemFormSet
+from .forms import QuotationForm, QuotationItemForm, QuotationItemFormSet, RentalContractForm
 
 
 class CustomerModelTestCase(TestCase):
@@ -351,8 +352,8 @@ class QuotationContractModelTestCase(TestCase):
         quote = Quotation.objects.create(
             customer=self.customer,
             project_site=self.site,
-            start_date=date(2026, 11, 1),
-            end_date=date(2026, 11, 10),
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10),
             subtotal_amount=Decimal('650000.00'),
             discount_percentage=Decimal('10.00'),
             estimated_transport_cost=Decimal('60000.00'),
@@ -493,8 +494,8 @@ class QuotationContractModelTestCase(TestCase):
             'items-MAX_NUM_FORMS': '1000',
             # Item 0 (Valid Item)
             'items-0-equipment': str(self.equipment.pk),
-            'items-0-start_date': '2026-11-01',
-            'items-0-end_date': '2026-11-10',
+            'items-0-start_date': '2026-12-01',
+            'items-0-end_date': '2026-12-10',
             'items-0-rate_type': Quotation.RateType.DAILY,
             'items-0-rate_applied': '45000.00',
             'items-0-subtotal_amount': '450000.00',
@@ -1825,7 +1826,12 @@ class BifurcatedDamageAndMaintenanceTestCase(TestCase):
 
     def test_pre_existing_damage_displayed_on_dispatch_page(self):
         """Dispatch form provides pre-existing damage in telemetry JSON and template alert markup."""
+        # Close the active contract from setUp so equipment is free to rent
+        self.contract.status = RentalContract.Status.CLOSED
+        self.contract.save(update_fields=['status'])
+
         # Flag equipment with pre-existing minor damage
+        self.equipment.status = Equipment.Status.AVAILABLE
         self.equipment.has_minor_damage = True
         self.equipment.minor_damage_notes = "Cracked rear tail-light housing"
         self.equipment.save()
@@ -2346,6 +2352,411 @@ class QuotationAndContractPDFTestCase(TestCase):
             self.client.force_login(user)
             self.assertEqual(self.client.get(q_url).status_code, 200)
             self.assertEqual(self.client.get(c_url).status_code, 200)
+
+
+class DoubleBookingPreventionAndConflictTestCase(TestCase):
+    """
+    Exhaustive test suite for double-booking prevention, multi-asset contract
+    conflict detection, reserved quotation conflict detection, manager queryset filtering,
+    form & formset validation, and contract conversion blocking.
+    """
+
+    def setUp(self):
+        self.rental_officer = User.objects.create_user(
+            username='ro_conflict_test',
+            email='ro_conflict@cerms.lk',
+            password='TestPassword123!',
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.management = User.objects.create_user(
+            username='mgmt_conflict_test',
+            email='mgmt_conflict@cerms.lk',
+            password='TestPassword123!',
+            role=User.Role.MANAGEMENT
+        )
+
+        self.category = Category.objects.create(
+            name="Excavators",
+            code="EXC",
+            description="Heavy Earthmoving Excavators"
+        )
+
+        # eq_primary: Primary equipment for a contract
+        self.eq_primary = Equipment.objects.create(
+            asset_code="EQ-PRI-001",
+            equipment_name="CAT 330D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="330D",
+            serial_number="CAT330-001",
+            manufacture_year=2023,
+            purchase_cost=Decimal("45000000.00"),
+            purchase_date=date(2023, 1, 1),
+            current_hour_meter=Decimal("500.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # eq_multi: Second equipment attached via RentalContractItem
+        self.eq_multi = Equipment.objects.create(
+            asset_code="EQ-MLT-002",
+            equipment_name="CAT 320D Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT320-002",
+            manufacture_year=2023,
+            purchase_cost=Decimal("35000000.00"),
+            purchase_date=date(2023, 1, 1),
+            current_hour_meter=Decimal("650.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # eq_reserved: Equipment reserved under an approved quotation
+        self.eq_reserved = Equipment.objects.create(
+            asset_code="EQ-RES-003",
+            equipment_name="Komatsu PC200 Excavator",
+            category=self.category,
+            brand="Komatsu",
+            model_number="PC200-8",
+            serial_number="KOM200-003",
+            manufacture_year=2023,
+            purchase_cost=Decimal("30000000.00"),
+            purchase_date=date(2023, 1, 1),
+            current_hour_meter=Decimal("800.00"),
+            status=Equipment.Status.AVAILABLE
+        )
+
+        # Customer & Site
+        self.customer = Customer.objects.create(
+            customer_code="CUST-CONF-001",
+            company_name="Maga Engineering Ltd",
+            contact_person="Rohan Fernando",
+            phone="+94771112233",
+            email="rohan@maga.lk",
+            billing_address="Colombo 02",
+            credit_limit=Decimal("10000000.00"),
+            status=Customer.Status.ACTIVE
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-CONF-001",
+            customer=self.customer,
+            project_name="Central Expressway Section II",
+            site_address="Mirigama",
+            status=ProjectSite.Status.ACTIVE
+        )
+
+        # 1. Existing Active Contract spanning 2026-11-01 to 2026-11-15
+        # Primary asset: eq_primary. Multi-asset item: eq_multi (2026-11-01 to 2026-11-15)
+        self.quote_contract = Quotation.objects.create(
+            quotation_no="QT-CONF-CONTRACT",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            subtotal_amount=Decimal("1500000.00"),
+            grand_total_amount=Decimal("1770000.00"),
+            status=Quotation.Status.CONVERTED
+        )
+        self.contract_multi = RentalContract.objects.create(
+            contract_no="CNT-CONF-0001",
+            quotation=self.quote_contract,
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.eq_primary,
+            contract_start_date=date(2026, 11, 1),
+            contract_end_date=date(2026, 11, 15),
+            agreed_rate=Decimal("50000.00"),
+            status=RentalContract.Status.ACTIVE
+        )
+        RentalContractItem.objects.create(
+            contract=self.contract_multi,
+            equipment=self.eq_multi,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 15),
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("675000.00")
+        )
+
+        # 2. Existing Approved Quotation (unconverted) spanning 2026-11-10 to 2026-11-20
+        # Asset: eq_reserved
+        self.quote_reserved = Quotation.objects.create(
+            quotation_no="QT-CONF-RESERVED",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 10),
+            end_date=date(2026, 11, 20),
+            subtotal_amount=Decimal("440000.00"),
+            grand_total_amount=Decimal("519200.00"),
+            status=Quotation.Status.APPROVED_BY_MANAGEMENT
+        )
+        QuotationItem.objects.create(
+            quotation=self.quote_reserved,
+            equipment=self.eq_reserved,
+            start_date=date(2026, 11, 10),
+            end_date=date(2026, 11, 20),
+            rate_applied=Decimal("40000.00"),
+            subtotal_amount=Decimal("440000.00")
+        )
+
+    def test_multi_asset_contract_item_conflict_detection(self):
+        """Verify Equipment.is_available_for_dates detects multi-asset contract item overlaps."""
+        # Overlapping period (Nov 5 - Nov 12) -> False
+        self.assertFalse(
+            self.eq_multi.is_available_for_dates(date(2026, 11, 5), date(2026, 11, 12))
+        )
+        # Exact boundary overlap (Nov 1 - Nov 1) -> False
+        self.assertFalse(
+            self.eq_multi.is_available_for_dates(date(2026, 11, 1), date(2026, 11, 1))
+        )
+        # Non-overlapping future period (Nov 16 - Nov 25) -> True
+        self.assertTrue(
+            self.eq_multi.is_available_for_dates(date(2026, 11, 16), date(2026, 11, 25))
+        )
+        # Non-overlapping prior period (Oct 20 - Oct 31) -> True
+        self.assertTrue(
+            self.eq_multi.is_available_for_dates(date(2026, 10, 20), date(2026, 10, 31))
+        )
+        # Exclude contract itself -> True
+        self.assertTrue(
+            self.eq_multi.is_available_for_dates(
+                date(2026, 11, 5), date(2026, 11, 12),
+                exclude_contract_id=self.contract_multi.pk
+            )
+        )
+
+    def test_quotation_item_reservation_conflict_detection(self):
+        """Verify Equipment.is_available_for_dates detects reserved unconverted quotation overlaps."""
+        # Overlapping period (Nov 12 - Nov 18) -> False
+        self.assertFalse(
+            self.eq_reserved.is_available_for_dates(date(2026, 11, 12), date(2026, 11, 18))
+        )
+        # Non-overlapping period (Nov 21 - Nov 30) -> True
+        self.assertTrue(
+            self.eq_reserved.is_available_for_dates(date(2026, 11, 21), date(2026, 11, 30))
+        )
+        # Exclude quotation itself -> True
+        self.assertTrue(
+            self.eq_reserved.is_available_for_dates(
+                date(2026, 11, 12), date(2026, 11, 18),
+                exclude_quotation_id=self.quote_reserved.pk
+            )
+        )
+
+        # Status: ACCEPTED also reserves equipment
+        self.quote_reserved.status = Quotation.Status.ACCEPTED
+        self.quote_reserved.save(update_fields=['status'])
+        self.assertFalse(
+            self.eq_reserved.is_available_for_dates(date(2026, 11, 12), date(2026, 11, 18))
+        )
+
+        # Status: DRAFT does NOT reserve equipment
+        self.quote_reserved.status = Quotation.Status.DRAFT
+        self.quote_reserved.save(update_fields=['status'])
+        self.assertTrue(
+            self.eq_reserved.is_available_for_dates(date(2026, 11, 12), date(2026, 11, 18))
+        )
+
+        # Status: REJECTED does NOT reserve equipment
+        self.quote_reserved.status = Quotation.Status.REJECTED
+        self.quote_reserved.save(update_fields=['status'])
+        self.assertTrue(
+            self.eq_reserved.is_available_for_dates(date(2026, 11, 12), date(2026, 11, 18))
+        )
+
+    def test_get_available_equipment_manager_filtering(self):
+        """Verify get_available_equipment excludes multi-asset contract items and reserved quotations."""
+        from fleet.managers import get_available_equipment
+
+        # Nov 5 to Nov 12:
+        # eq_primary is in contract_multi (direct)
+        # eq_multi is in contract_multi (RentalContractItem)
+        # eq_reserved is in quote_reserved (QuotationItem, APPROVED_BY_MANAGEMENT)
+        available = get_available_equipment(
+            category_id=self.category.id,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 12)
+        )
+        self.assertNotIn(self.eq_primary, available)
+        self.assertNotIn(self.eq_multi, available)
+        self.assertNotIn(self.eq_reserved, available)
+
+        # Dec 1 to Dec 10: all are available
+        available_dec = get_available_equipment(
+            category_id=self.category.id,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 10)
+        )
+        self.assertIn(self.eq_primary, available_dec)
+        self.assertIn(self.eq_multi, available_dec)
+        self.assertIn(self.eq_reserved, available_dec)
+
+        # Excluding contract allows eq_multi and eq_primary
+        available_ex_contract = get_available_equipment(
+            category_id=self.category.id,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 12),
+            exclude_contract_id=self.contract_multi.pk
+        )
+        self.assertIn(self.eq_primary, available_ex_contract)
+        self.assertIn(self.eq_multi, available_ex_contract)
+        self.assertNotIn(self.eq_reserved, available_ex_contract)
+
+        # Excluding quotation allows eq_reserved
+        available_ex_quote = get_available_equipment(
+            category_id=self.category.id,
+            start_date=date(2026, 11, 16),
+            end_date=date(2026, 11, 18),
+            exclude_quotation_id=self.quote_reserved.pk
+        )
+        self.assertIn(self.eq_reserved, available_ex_quote)
+
+    def test_quotation_item_form_rejects_conflicting_equipment(self):
+        """Verify QuotationItemForm.clean raises ValidationError on equipment double-booking."""
+        # Attempt to book eq_multi during its active contract period
+        form_data = {
+            'equipment': self.eq_multi.asset_code,
+            'start_date': '2026-11-05',
+            'end_date': '2026-11-10',
+            'rate_type': Quotation.RateType.DAILY,
+            'rate_applied': '45000.00',
+            'subtotal_amount': '270000.00',
+        }
+        form = QuotationItemForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('equipment', form.errors)
+        self.assertIn('already booked or reserved', form.errors['equipment'][0])
+
+        # Attempt to book eq_reserved during its reserved quotation period
+        form_data_res = {
+            'equipment': self.eq_reserved.asset_code,
+            'start_date': '2026-11-12',
+            'end_date': '2026-11-15',
+            'rate_type': Quotation.RateType.DAILY,
+            'rate_applied': '40000.00',
+            'subtotal_amount': '160000.00',
+        }
+        form_res = QuotationItemForm(data=form_data_res)
+        self.assertFalse(form_res.is_valid())
+        self.assertIn('equipment', form_res.errors)
+        self.assertIn('already booked or reserved', form_res.errors['equipment'][0])
+
+    def test_quotation_formset_rejects_intra_formset_duplicate_overlap(self):
+        """Verify QuotationItemFormSet prevents duplicate booking of same machine on overlapping dates."""
+        formset_data = {
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1',
+            'items-MAX_NUM_FORMS': '1000',
+            # Item 0: eq_multi from Dec 1 to Dec 10
+            'items-0-equipment': self.eq_multi.asset_code,
+            'items-0-start_date': '2026-12-01',
+            'items-0-end_date': '2026-12-10',
+            'items-0-rate_type': Quotation.RateType.DAILY,
+            'items-0-rate_applied': '45000.00',
+            'items-0-subtotal_amount': '450000.00',
+            # Item 1: same eq_multi from Dec 5 to Dec 15 (overlapping with Item 0)
+            'items-1-equipment': self.eq_multi.asset_code,
+            'items-1-start_date': '2026-12-05',
+            'items-1-end_date': '2026-12-15',
+            'items-1-rate_type': Quotation.RateType.DAILY,
+            'items-1-rate_applied': '45000.00',
+            'items-1-subtotal_amount': '495000.00',
+        }
+        formset = QuotationItemFormSet(data=formset_data)
+        self.assertFalse(formset.is_valid())
+        # The second form should contain the overlap error
+        form_errors = formset.forms[1].errors
+        self.assertIn('equipment', form_errors)
+        self.assertIn('multiple times for overlapping date ranges', form_errors['equipment'][0])
+
+    def test_rental_contract_form_rejects_conflicting_equipment(self):
+        """Verify RentalContractForm.clean raises ValidationError if equipment is occupied."""
+        form_data = {
+            'contract_no': 'CNT-CONF-9999',
+            'quotation': self.quote_contract.pk,
+            'customer': self.customer.pk,
+            'project_site': self.site.pk,
+            'equipment': self.eq_multi.asset_code,
+            'contract_start_date': '2026-11-05',
+            'contract_end_date': '2026-11-10',
+            'billing_cycle': 'MONTHLY',
+            'agreed_rate': '45000.00',
+            'deposit_paid': '0.00',
+            'status': RentalContract.Status.ACTIVE,
+        }
+        form = RentalContractForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('equipment', form.errors)
+        self.assertIn('already booked or reserved', form.errors['equipment'][0])
+
+    def test_convert_quotation_to_contract_blocks_double_booked_equipment(self):
+        """Verify convert_quotation_to_contract raises ValidationError if equipment has conflict."""
+        # Create an accepted quotation for eq_multi overlapping with contract_multi
+        q_conflict = Quotation.objects.create(
+            quotation_no="QT-CONF-DOUBLEBOOK",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 10),
+            subtotal_amount=Decimal("270000.00"),
+            grand_total_amount=Decimal("318600.00"),
+            status=Quotation.Status.ACCEPTED
+        )
+        QuotationItem.objects.create(
+            quotation=q_conflict,
+            equipment=self.eq_multi,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("270000.00")
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            convert_quotation_to_contract(q_conflict.quotation_no, user=self.rental_officer)
+
+        self.assertIn("already booked or reserved", str(ctx.exception))
+
+    def test_quotation_status_transition_blocks_approval_and_acceptance_if_conflict(self):
+        """Verify QuotationStatusTransitionView blocks management approval and customer acceptance on double booking."""
+        self.client.force_login(self.management)
+
+        # Create draft quotation with eq_multi on dates overlapping contract_multi
+        q_draft = Quotation.objects.create(
+            quotation_no="QT-CONF-TRANSITION",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 10),
+            subtotal_amount=Decimal("270000.00"),
+            grand_total_amount=Decimal("318600.00"),
+            status=Quotation.Status.DRAFT
+        )
+        QuotationItem.objects.create(
+            quotation=q_draft,
+            equipment=self.eq_multi,
+            start_date=date(2026, 11, 5),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("45000.00"),
+            subtotal_amount=Decimal("270000.00")
+        )
+
+        transition_url = reverse('rentals:quotation_transition', kwargs={'quotation_no': q_draft.quotation_no})
+
+        # Try to approve -> blocked
+        resp_approve = self.client.post(transition_url, {'action': 'approve'}, follow=True)
+        q_draft.refresh_from_db()
+        self.assertEqual(q_draft.status, Quotation.Status.DRAFT)
+        messages_approve = [m.message for m in resp_approve.context['messages']]
+        self.assertTrue(any('already booked or reserved' in m for m in messages_approve))
+
+        # Try to mark accepted -> blocked
+        resp_accept = self.client.post(transition_url, {'action': 'mark_accepted'}, follow=True)
+        q_draft.refresh_from_db()
+        self.assertEqual(q_draft.status, Quotation.Status.DRAFT)
+        messages_accept = [m.message for m in resp_accept.context['messages']]
+        self.assertTrue(any('already booked or reserved' in m for m in messages_accept))
+
 
 
 
