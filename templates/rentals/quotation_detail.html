@@ -102,6 +102,14 @@
             </a>
         {% endif %}
 
+        <!-- WeasyPrint PDF Generation & Download -->
+        <a href="{% url 'rentals:quotation_pdf' quotation_no=quotation.quotation_no %}" target="_blank" class="btn btn-outline-danger shadow-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i> View A4 PDF
+        </a>
+        <a href="{% url 'rentals:quotation_pdf' quotation_no=quotation.quotation_no %}?download=1" class="btn btn-danger shadow-sm">
+            <i class="bi bi-download me-1"></i> Download PDF
+        </a>
+
         {% if request.user.role == 'ADMINISTRATOR' or request.user.is_superuser %}
             {% if not has_contract and quotation.status != 'CONVERTED' %}
             <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteQuotationModal">

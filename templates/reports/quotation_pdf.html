@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Commercial Quotation {{ quotation.quotation_no }} — CERMS</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 1.2cm 1.4cm 1.4cm 1.4cm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 8.5pt;
+                color: #666666;
+            }
+            @bottom-left {
+                content: "CERMS Enterprise Heavy Machinery ERP — Generated on {{ now|date:'Y-m-d H:i' }}";
+                font-size: 8pt;
+                color: #888888;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 8.5pt;
+            line-height: 1.35;
+            color: #111111;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        tfoot {
+            display: table-footer-group;
+        }
+
+        tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .keep-together, .signature-section, .totals-section, .info-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        h1, h2, h3, h4, .doc-header {
+            page-break-after: avoid;
+            break-after: avoid;
+            margin-top: 0;
+        }
+
+        .header-table td {
+            vertical-align: top;
+        }
+
+        .company-title {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #0d6efd;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .company-subtitle {
+            font-size: 8pt;
+            color: #444444;
+            line-height: 1.25;
+        }
+
+        .quotation-title {
+            font-size: 15pt;
+            font-weight: bold;
+            color: #212529;
+            text-align: right;
+            text-transform: uppercase;
+        }
+
+        .meta-box {
+            text-align: right;
+            font-size: 8.5pt;
+            line-height: 1.35;
+        }
+
+        .meta-box strong {
+            color: #111111;
+        }
+
+        .divider {
+            border-bottom: 2px solid #0d6efd;
+            margin: 8px 0 10px 0;
+        }
+
+        .info-card {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 8.5pt;
+            line-height: 1.3;
+        }
+
+        .info-card h4 {
+            font-size: 9pt;
+            font-weight: bold;
+            color: #0d6efd;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 3px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .items-table {
+            margin-top: 10px;
+            margin-bottom: 16px;
+            border: 1px solid #cccccc;
+        }
+
+        .items-table th {
+            background-color: #f1f4f9;
+            color: #000000;
+            font-weight: bold;
+            font-size: 8.5pt;
+            text-align: left;
+            padding: 7px 9px;
+            border-bottom: 1px solid #cccccc;
+            text-transform: uppercase;
+        }
+
+        .items-table td {
+            padding: 7px 9px;
+            border-bottom: 1px solid #eeeeee;
+            font-size: 8.5pt;
+            vertical-align: top;
+        }
+
+        .text-end {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .font-mono {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .totals-section-wrapper {
+            margin-top: 14px;
+            margin-bottom: 14px;
+        }
+
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .totals-table td {
+            padding: 4px 6px;
+            font-size: 8.5pt;
+            vertical-align: middle;
+        }
+
+        .totals-table tr.grand-total td {
+            background-color: #212529;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 9.5pt;
+            border-top: 1px solid #000000;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 8pt;
+            text-transform: uppercase;
+        }
+
+        .status-draft {
+            background-color: #e2e3e5;
+            color: #41464b;
+            border: 1px solid #d3d6d8;
+        }
+
+        .status-approved {
+            background-color: #cff4fc;
+            color: #055160;
+            border: 1px solid #b6effb;
+        }
+
+        .status-sent {
+            background-color: #cfe2ff;
+            color: #084298;
+            border: 1px solid #b6d4fe;
+        }
+
+        .status-accepted {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+        }
+
+        .terms-box {
+            background-color: #fcfcfc;
+            border: 1px solid #e0e0e0;
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 7.8pt;
+            line-height: 1.35;
+            color: #333333;
+            margin-top: 10px;
+            page-break-inside: avoid;
+        }
+
+        .terms-box h4 {
+            font-size: 8.5pt;
+            font-weight: bold;
+            color: #212529;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .terms-box ol {
+            margin: 0;
+            padding-left: 16px;
+        }
+
+        .terms-box li {
+            margin-bottom: 3px;
+        }
+
+        .signature-section {
+            margin-top: 28px;
+            margin-bottom: 12px;
+            width: 100%;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .signature-box {
+            width: 30%;
+            border-top: 1px solid #000000;
+            text-align: center;
+            font-size: 8pt;
+            padding-top: 6px;
+            vertical-align: top;
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            font-size: 7.5pt;
+            color: #666666;
+            border-top: 1px dashed #cccccc;
+            padding-top: 6px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Table -->
+    <table class="header-table">
+        <tr>
+            <td style="width: 55%;">
+                <div class="company-title">CERMS ERP SYSTEM</div>
+                <div class="company-subtitle">
+                    <strong>Construction Equipment Rental & Fleet Management</strong><br>
+                    No. 150, High Level Road, Colombo 06, Sri Lanka<br>
+                    Tel: +94 11 234 5678 | Email: sales@cerms-erp.lk<br>
+                    VAT Reg No: <strong>VAT-119874521-7000</strong>
+                </div>
+            </td>
+            <td style="width: 45%;">
+                <div class="quotation-title">COMMERCIAL QUOTATION</div>
+                <div class="meta-box" style="margin-top: 4px;">
+                    <strong>Quotation No:</strong> <span class="font-mono" style="font-size: 10.5pt; font-weight: bold; color: #0d6efd;">{{ quotation.quotation_no }}</span><br>
+                    <strong>Date Issued:</strong> {{ quotation.created_at|date:"Y-m-d" }}<br>
+                    <strong>Validity Expiration:</strong> <span style="font-weight: bold; color: #d63384;">{{ valid_until|date:"Y-m-d" }}</span><br>
+                    <strong>Default Rate Tier:</strong> {{ quotation.get_rate_type_display }} Tariff<br>
+                    <strong>Status:</strong>
+                    <span class="status-badge {% if quotation.status == 'ACCEPTED' or quotation.status == 'CONVERTED' %}status-accepted{% elif quotation.status == 'APPROVED_BY_MANAGEMENT' %}status-approved{% elif quotation.status == 'SENT_TO_CUSTOMER' %}status-sent{% else %}status-draft{% endif %}">
+                        {{ quotation.get_status_display }}
+                    </span>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="divider"></div>
+
+    <!-- Client & Project Site Details -->
+    <table style="width: 100%; margin-bottom: 8px;">
+        <tr>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>Prospective Customer Organization</h4>
+                    <strong>{{ customer.company_name }}</strong> (<span class="font-mono">{{ customer.customer_code }}</span>)<br>
+                    {{ customer.billing_address|linebreaksbr }}<br>
+                    <strong>Contact Person:</strong> {{ customer.contact_person }} ({{ customer.phone }})<br>
+                    <strong>Email:</strong> {{ customer.email|default:"N/A" }}<br>
+                    <strong>Tax / VAT Number:</strong> {{ customer.vat_tax_number|default:"N/A" }}
+                </div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>Deployment Site & Rental Schedule</h4>
+                    <strong>Project Site:</strong> {{ project_site.project_name }} (<span class="font-mono">{{ project_site.project_code }}</span>)<br>
+                    <strong>Site Address:</strong> {{ project_site.site_address }}<br>
+                    <strong>Site Contact:</strong> {{ project_site.site_contact_person }} ({{ project_site.site_contact_phone }})<br>
+                    <strong>Rental Schedule:</strong> {{ quotation.start_date|date:"Y-m-d" }} to {{ quotation.end_date|date:"Y-m-d" }}<br>
+                    <strong>Estimated Duration:</strong> <strong>{{ quotation.duration_days }} calendar day(s)</strong>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Equipment Specifications & Rate Breakdown Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%;" class="text-center">#</th>
+                <th style="width: 45%;">Equipment Asset & Technical Specifications</th>
+                <th style="width: 25%;" class="text-center">Schedule & Tariff Tier</th>
+                <th style="width: 25%;" class="text-end">Line Total (LKR)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if items %}
+                {% for item in items %}
+                <tr>
+                    <td class="text-center font-mono">{{ forloop.counter|stringformat:"02d" }}</td>
+                    <td>
+                        <strong>{{ item.equipment.equipment_name }}</strong> (<span class="font-mono">{{ item.equipment.asset_code }}</span>)<br>
+                        <small style="color: #555555;">
+                            Category: {{ item.equipment.category.name }} &bull; Brand/Model: {{ item.equipment.brand }} {{ item.equipment.model_number }}<br>
+                            Serial / VIN: <span class="font-mono">{{ item.equipment.serial_number }}</span> &bull; Mfg Year: {{ item.equipment.manufacture_year }}
+                        </small>
+                    </td>
+                    <td class="text-center">
+                        <span class="font-mono">Rate: Rs. {{ item.rate_applied|floatformat:2 }}</span> / {{ item.get_rate_type_display }}<br>
+                        <small style="color: #666666;">{{ item.item_start_date|date:"Y-m-d" }} to {{ item.item_end_date|date:"Y-m-d" }} ({{ item.duration_days }} days)</small>
+                    </td>
+                    <td class="text-end font-mono">Rs. {{ item.subtotal_amount|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            {% elif primary_equipment %}
+                <tr>
+                    <td class="text-center font-mono">01</td>
+                    <td>
+                        <strong>{{ primary_equipment.equipment_name }}</strong> (<span class="font-mono">{{ primary_equipment.asset_code }}</span>)<br>
+                        <small style="color: #555555;">
+                            Category: {{ primary_equipment.category.name }} &bull; {{ primary_equipment.brand }} {{ primary_equipment.model_number }}<br>
+                            Serial No: <span class="font-mono">{{ primary_equipment.serial_number }}</span>
+                        </small>
+                    </td>
+                    <td class="text-center">
+                        <small style="color: #666666;">{{ quotation.start_date|date:"Y-m-d" }} to {{ quotation.end_date|date:"Y-m-d" }} ({{ quotation.duration_days }} days)</small>
+                    </td>
+                    <td class="text-end font-mono">Rs. {{ quotation.subtotal_amount|floatformat:2 }}</td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td class="text-center font-mono">01</td>
+                    <td>
+                        <strong>Base Machinery Rental Service</strong><br>
+                        <small style="color: #666666;">Rental duration: {{ quotation.start_date|date:"Y-m-d" }} to {{ quotation.end_date|date:"Y-m-d" }} ({{ quotation.duration_days }} days)</small>
+                    </td>
+                    <td class="text-center font-mono">{{ quotation.get_rate_type_display }} Rate</td>
+                    <td class="text-end font-mono">Rs. {{ quotation.subtotal_amount|floatformat:2 }}</td>
+                </tr>
+            {% endif %}
+
+            {% if quotation.estimated_transport_cost > 0 %}
+            <tr>
+                <td class="text-center font-mono">{% if items %}{{ items|length|add:1|stringformat:"02d" }}{% else %}02{% endif %}</td>
+                <td>
+                    <strong>Round-Trip Mobilization & Demobilization Logistics</strong><br>
+                    <small style="color: #666666;">Estimated low-bed transport to and from {{ project_site.project_name }}</small>
+                </td>
+                <td class="text-center">Site Logistics Freight</td>
+                <td class="text-end font-mono">Rs. {{ quotation.estimated_transport_cost|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <!-- Commercial Financial Totals & Deposit Terms -->
+    <table class="keep-together totals-section-wrapper" style="width: 100%;">
+        <tr>
+            <td style="width: 50%; vertical-align: top;">
+                <div class="info-card" style="font-size: 8pt; line-height: 1.3;">
+                    <h4 style="font-size: 8.5pt;">Security Deposit & Payment Terms</h4>
+                    <strong>Refundable Security Deposit:</strong>
+                    <span class="font-mono" style="font-size: 9.5pt; font-weight: bold; color: #0d6efd;">Rs. {{ quotation.security_deposit_required|floatformat:2 }}</span><br>
+                    <p style="margin: 4px 0 0 0; color: #444444;">
+                        A refundable security deposit of <strong>Rs. {{ quotation.security_deposit_required|floatformat:2 }}</strong> is required prior to equipment mobilization. Deposit is held in escrow and reconciled against the final settlement invoice upon demobilization inspection.
+                    </p>
+                    <div style="margin-top: 5px; padding-top: 4px; border-top: 1px dashed #cccccc; font-size: 7.5pt; color: #666666;">
+                        * Mobilization commences upon receipt of written acceptance & security deposit clearance.
+                    </div>
+                </div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 46%; vertical-align: top;">
+                <table class="totals-table">
+                    <tr>
+                        <td style="width: 58%;"><strong>Equipment Base Subtotal:</strong></td>
+                        <td style="width: 42%;" class="text-end font-mono">Rs. {{ quotation.subtotal_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% if quotation.discount_amount > 0 %}
+                    <tr style="color: #198754;">
+                        <td><strong>Approved Discount ({{ quotation.discount_percentage }}%):</strong></td>
+                        <td class="text-end font-mono">- Rs. {{ quotation.discount_amount|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if quotation.estimated_transport_cost > 0 %}
+                    <tr>
+                        <td><strong>Estimated Transport Fees:</strong></td>
+                        <td class="text-end font-mono">Rs. {{ quotation.estimated_transport_cost|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr style="border-top: 1px solid #dee2e6;">
+                        <td><strong>Taxable Base Amount:</strong></td>
+                        <td class="text-end font-mono">Rs. {{ quotation.taxable_base_amount|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Statutory VAT (18%):</strong></td>
+                        <td class="text-end font-mono">Rs. {{ quotation.total_tax_amount|floatformat:2 }}</td>
+                    </tr>
+                    <tr class="grand-total">
+                        <td style="color: #ffffff;"><strong>GRAND TOTAL VALUE:</strong></td>
+                        <td class="text-end font-mono" style="color: #ffc107;"><strong>Rs. {{ quotation.grand_total_amount|floatformat:2 }}</strong></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Commercial Terms & Conditions -->
+    <div class="terms-box">
+        <h4>Commercial Terms & Operating Conditions</h4>
+        <ol>
+            <li><strong>Validity:</strong> This quotation is valid until <strong>{{ valid_until|date:"Y-m-d" }}</strong>. Machinery availability is subject to prior booking until contract execution.</li>
+            <li><strong>Shift & Operating Hours:</strong> Rates are based on a standard single shift of 8 hours/day. Hours exceeding 8 hours/day will be billed at applicable overtime hourly rates.</li>
+            <li><strong>Fuel & Maintenance:</strong> Fuel is to the account of the hirer. Daily checks, greasing, and lubrication are the customer's responsibility. Preventative maintenance is handled by CERMS.</li>
+            <li><strong>Site Accessibility:</strong> The client shall ensure unhindered, safe access and security for the machinery at the project site.</li>
+            <li><strong>Conversion:</strong> Formal binding rental requires countersigning of the CERMS Heavy Equipment Rental Contract Agreement.</li>
+        </ol>
+    </div>
+
+    <!-- Authorized Signatures Section -->
+    <table class="signature-section">
+        <tr>
+            <td class="signature-box">
+                <strong>Prepared By (Rental Officer)</strong><br>
+                <span style="font-size: 7.5pt; color: #666666;">Date: {{ quotation.created_at|date:"Y-m-d" }}</span>
+            </td>
+            <td style="width: 5%;"></td>
+            <td class="signature-box">
+                <strong>Authorized Management Signatory</strong><br>
+                <span style="font-size: 7.5pt; color: #666666;">
+                    {% if quotation.approved_by %}
+                        Approved by {{ quotation.approved_by.get_full_name|default:quotation.approved_by.username }} &bull; {{ quotation.approval_date|date:"Y-m-d" }}
+                    {% else %}
+                        Pending Management Authorization
+                    {% endif %}
+                </span>
+            </td>
+            <td style="width: 5%;"></td>
+            <td class="signature-box">
+                <strong>Customer Acceptance & Seal</strong><br>
+                <span style="font-size: 7.5pt; color: #666666;">Authorized Signatory / Date / Stamp</span>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer-note text-center">
+        This is an official commercial quotation issued by CERMS Heavy Equipment Rentals (Pvt) Ltd.<br>
+        For inquiries or contract confirmation, please contact our rentals desk at <strong>sales@cerms-erp.lk</strong> or call <strong>+94 11 234 5678</strong>.
+    </div>
+
+</body>
+</html>

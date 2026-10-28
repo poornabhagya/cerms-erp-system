@@ -1,12 +1,19 @@
 from datetime import date, datetime
 from decimal import Decimal
-from django.test import TestCase
+from django.test import TestCase, Client
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 
 from users.models import User
 from fleet.models import Category, Equipment
 from .models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
-from .services import validate_customer_credit_limit, calculate_quotation_totals, convert_quotation_to_contract
+from .services import (
+    validate_customer_credit_limit,
+    calculate_quotation_totals,
+    convert_quotation_to_contract,
+    render_quotation_to_pdf,
+    render_contract_to_pdf
+)
 from .forms import QuotationForm, QuotationItemForm, QuotationItemFormSet
 
 
@@ -2126,6 +2133,220 @@ class CreditLimitAndStandingEnforcementTests(TestCase):
         self.assertEqual(contract.status, RentalContract.Status.ACTIVE)
         quote.refresh_from_db()
         self.assertEqual(quote.status, Quotation.Status.CONVERTED)
+
+
+class QuotationAndContractPDFTestCase(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(
+            code="EXC",
+            name="Heavy Excavator",
+            description="Hydraulic crawler excavators",
+        )
+        self.equipment = Equipment.objects.create(
+            asset_code="EQ-CAT-320-001",
+            equipment_name="Caterpillar 320D Hydraulic Excavator",
+            category=self.category,
+            brand="Caterpillar",
+            model_number="320D",
+            serial_number="CAT320D-2026-9901",
+            manufacture_year=2023,
+            purchase_cost=Decimal("35000000.00"),
+            purchase_date=date(2023, 1, 1),
+            status=Equipment.Status.AVAILABLE,
+            current_hour_meter=Decimal("1250.50"),
+        )
+        self.customer = Customer.objects.create(
+            customer_code="CUST-PDF-001",
+            company_name="Access Engineering PLC",
+            contact_person="Sunil Perera",
+            phone="+94771234567",
+            email="sunil@accesseng.lk",
+            billing_address="No. 120, Station Road, Colombo 03",
+            vat_tax_number="VAT-123456789-7000",
+            credit_limit=Decimal("5000000.00"),
+            current_outstanding_balance=Decimal("0.00"),
+            status=Customer.Status.ACTIVE,
+        )
+        self.site = ProjectSite.objects.create(
+            project_code="PRJ-PDF-001",
+            customer=self.customer,
+            project_name="Central Expressway Section III",
+            site_address="Mirigama Interchange Site, Mirigama",
+            site_contact_person="Kamal Silva",
+            site_contact_phone="+94779876543",
+            status=ProjectSite.Status.ACTIVE,
+        )
+        self.rental_officer = User.objects.create_user(
+            username="pdf_rental_officer",
+            email="ro_pdf@cerms.lk",
+            password="testpassword2026",
+            role=User.Role.RENTAL_OFFICER,
+        )
+        self.accountant = User.objects.create_user(
+            username="pdf_accountant",
+            email="acc_pdf@cerms.lk",
+            password="testpassword2026",
+            role=User.Role.ACCOUNTANT,
+        )
+        self.management = User.objects.create_user(
+            username="pdf_management",
+            email="mgmt_pdf@cerms.lk",
+            password="testpassword2026",
+            role=User.Role.MANAGEMENT,
+        )
+        self.unauthorized_user = User.objects.create_user(
+            username="pdf_unauth",
+            email="unauth_pdf@cerms.lk",
+            password="testpassword2026",
+            role=User.Role.STOREKEEPER,
+        )
+
+        self.quotation = Quotation.objects.create(
+            quotation_no="QT-2026-PDF-01",
+            customer=self.customer,
+            project_site=self.site,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_type=Quotation.RateType.DAILY,
+            estimated_transport_cost=Decimal("35000.00"),
+            security_deposit_required=Decimal("150000.00"),
+            discount_percentage=Decimal("5.00"),
+            subtotal_amount=Decimal("250000.00"),
+            total_tax_amount=Decimal("49050.00"),
+            grand_total_amount=Decimal("321550.00"),
+            status=Quotation.Status.APPROVED_BY_MANAGEMENT,
+            approved_by=self.management,
+        )
+        self.quotation_item = QuotationItem.objects.create(
+            quotation=self.quotation,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_type=Quotation.RateType.DAILY,
+            rate_applied=Decimal("25000.00"),
+            subtotal_amount=Decimal("250000.00"),
+        )
+
+        self.contract = RentalContract.objects.create(
+            contract_no="CNT-2026-PDF-01",
+            quotation=self.quotation,
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            contract_start_date=date(2026, 11, 1),
+            contract_end_date=date(2026, 11, 10),
+            billing_cycle=RentalContract.BillingCycle.MONTHLY,
+            agreed_rate=Decimal("25000.00"),
+            deposit_paid=Decimal("150000.00"),
+            status=RentalContract.Status.ACTIVE,
+        )
+        self.contract_item = RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=self.equipment,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 10),
+            rate_applied=Decimal("25000.00"),
+            rate_type=Quotation.RateType.DAILY,
+            subtotal_amount=Decimal("250000.00"),
+        )
+
+    def test_render_quotation_to_pdf_by_id_and_instance(self):
+        """Verify render_quotation_to_pdf renders valid bytes with both ID string and instance."""
+        pdf_bytes_by_str = render_quotation_to_pdf(self.quotation.quotation_no)
+        self.assertIsInstance(pdf_bytes_by_str, bytes)
+        self.assertTrue(len(pdf_bytes_by_str) > 0)
+
+        pdf_bytes_by_obj = render_quotation_to_pdf(self.quotation)
+        self.assertIsInstance(pdf_bytes_by_obj, bytes)
+        self.assertTrue(len(pdf_bytes_by_obj) > 0)
+
+        content_str = pdf_bytes_by_str.decode('utf-8', errors='ignore')
+        self.assertIn("CERMS ERP SYSTEM", content_str)
+        self.assertIn("COMMERCIAL QUOTATION", content_str)
+        self.assertIn(self.quotation.quotation_no, content_str)
+        self.assertIn(self.customer.company_name, content_str)
+        self.assertIn(self.equipment.asset_code, content_str)
+        self.assertIn("150000.00", content_str)
+        self.assertIn("35000.00", content_str)
+
+    def test_render_contract_to_pdf_by_id_and_instance(self):
+        """Verify render_contract_to_pdf renders valid bytes with both ID string and instance."""
+        pdf_bytes_by_str = render_contract_to_pdf(self.contract.contract_no)
+        self.assertIsInstance(pdf_bytes_by_str, bytes)
+        self.assertTrue(len(pdf_bytes_by_str) > 0)
+
+        pdf_bytes_by_obj = render_contract_to_pdf(self.contract)
+        self.assertIsInstance(pdf_bytes_by_obj, bytes)
+        self.assertTrue(len(pdf_bytes_by_obj) > 0)
+
+        content_str = pdf_bytes_by_str.decode('utf-8', errors='ignore')
+        self.assertIn("CERMS ERP SYSTEM", content_str)
+        self.assertIn("RENTAL CONTRACT AGREEMENT", content_str)
+        self.assertIn(self.contract.contract_no, content_str)
+        self.assertIn(self.customer.company_name, content_str)
+        self.assertIn(self.equipment.serial_number, content_str)
+        self.assertIn("OPERATING HOURS & OVERTIME HOUR-METER RULES", content_str)
+        self.assertIn("BREAKDOWN & MAINTENANCE LIABILITY CLAUSES", content_str)
+        self.assertIn("For the Lessor", content_str)
+        self.assertIn("For the Lessee", content_str)
+
+    def test_quotation_pdf_download_view_inline_and_attachment(self):
+        """Verify QuotationPDFDownloadView handles inline stream and ?download=1 attachment."""
+        self.client.force_login(self.rental_officer)
+
+        url_inline = reverse('rentals:quotation_pdf', kwargs={'quotation_no': self.quotation.quotation_no})
+        resp_inline = self.client.get(url_inline)
+        self.assertEqual(resp_inline.status_code, 200)
+        self.assertEqual(resp_inline['Content-Type'], 'application/pdf')
+        self.assertIn('inline', resp_inline['Content-Disposition'])
+        self.assertIn(f'Quotation-{self.quotation.quotation_no}.pdf', resp_inline['Content-Disposition'])
+
+        resp_download = self.client.get(url_inline + '?download=1')
+        self.assertEqual(resp_download.status_code, 200)
+        self.assertEqual(resp_download['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', resp_download['Content-Disposition'])
+
+    def test_contract_pdf_download_view_inline_and_attachment(self):
+        """Verify ContractPDFDownloadView handles inline stream and ?download=1 attachment."""
+        self.client.force_login(self.management)
+
+        url_inline = reverse('rentals:contract_pdf', kwargs={'contract_no': self.contract.contract_no})
+        resp_inline = self.client.get(url_inline)
+        self.assertEqual(resp_inline.status_code, 200)
+        self.assertEqual(resp_inline['Content-Type'], 'application/pdf')
+        self.assertIn('inline', resp_inline['Content-Disposition'])
+        self.assertIn(f'Contract-{self.contract.contract_no}.pdf', resp_inline['Content-Disposition'])
+
+        resp_download = self.client.get(url_inline + '?download=1')
+        self.assertEqual(resp_download.status_code, 200)
+        self.assertEqual(resp_download['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', resp_download['Content-Disposition'])
+
+    def test_rbac_access_controls_for_pdf_downloads(self):
+        """Verify unauthorized users are blocked from downloading Quotation and Contract PDFs."""
+        q_url = reverse('rentals:quotation_pdf', kwargs={'quotation_no': self.quotation.quotation_no})
+        c_url = reverse('rentals:contract_pdf', kwargs={'contract_no': self.contract.contract_no})
+
+        # Unauthenticated access -> 302 redirect to login
+        self.client.logout()
+        resp_q_anon = self.client.get(q_url)
+        self.assertEqual(resp_q_anon.status_code, 302)
+        resp_c_anon = self.client.get(c_url)
+        self.assertEqual(resp_c_anon.status_code, 302)
+
+        # Unauthorized role (CUSTOMER) -> 403 or redirect
+        self.client.force_login(self.unauthorized_user)
+        resp_q_unauth = self.client.get(q_url)
+        self.assertIn(resp_q_unauth.status_code, [302, 403])
+        resp_c_unauth = self.client.get(c_url)
+        self.assertIn(resp_c_unauth.status_code, [302, 403])
+
+        # Authorized roles can access
+        for user in [self.rental_officer, self.accountant, self.management]:
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(q_url).status_code, 200)
+            self.assertEqual(self.client.get(c_url).status_code, 200)
+
 
 
 

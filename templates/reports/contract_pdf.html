@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rental Contract Agreement {{ contract.contract_no }} — CERMS</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 1.2cm 1.4cm 1.4cm 1.4cm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 8.5pt;
+                color: #666666;
+            }
+            @bottom-left {
+                content: "CERMS Heavy Equipment Rentals — Legal Agreement {{ contract.contract_no }}";
+                font-size: 8pt;
+                color: #888888;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 8.2pt;
+            line-height: 1.35;
+            color: #111111;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        tfoot {
+            display: table-footer-group;
+        }
+
+        tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .keep-together, .signature-section, .totals-section, .info-card, .clause-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        h1, h2, h3, h4, .contract-header {
+            page-break-after: avoid;
+            break-after: avoid;
+            margin-top: 0;
+        }
+
+        .header-table td {
+            vertical-align: top;
+        }
+
+        .company-title {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #0d6efd;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .company-subtitle {
+            font-size: 8pt;
+            color: #444444;
+            line-height: 1.25;
+        }
+
+        .contract-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #212529;
+            text-align: right;
+            text-transform: uppercase;
+        }
+
+        .meta-box {
+            text-align: right;
+            font-size: 8.5pt;
+            line-height: 1.35;
+        }
+
+        .meta-box strong {
+            color: #111111;
+        }
+
+        .divider {
+            border-bottom: 2px solid #0d6efd;
+            margin: 8px 0 10px 0;
+        }
+
+        .info-card {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 7px 9px;
+            border-radius: 4px;
+            font-size: 8.2pt;
+            line-height: 1.3;
+        }
+
+        .info-card h4 {
+            font-size: 8.8pt;
+            font-weight: bold;
+            color: #0d6efd;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 3px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .items-table {
+            margin-top: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #cccccc;
+        }
+
+        .items-table th {
+            background-color: #f1f4f9;
+            color: #000000;
+            font-weight: bold;
+            font-size: 8.2pt;
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid #cccccc;
+            text-transform: uppercase;
+        }
+
+        .items-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eeeeee;
+            font-size: 8.2pt;
+            vertical-align: top;
+        }
+
+        .text-end {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .font-mono {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 8pt;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background-color: #cfe2ff;
+            color: #084298;
+            border: 1px solid #b6d4fe;
+        }
+
+        .status-on-rent {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+        }
+
+        .status-returned {
+            background-color: #cff4fc;
+            color: #055160;
+            border: 1px solid #b6effb;
+        }
+
+        .status-closed {
+            background-color: #e2e3e5;
+            color: #41464b;
+            border: 1px solid #d3d6d8;
+        }
+
+        .legal-section {
+            margin-top: 10px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            padding: 8px 10px;
+            background-color: #fafbfc;
+        }
+
+        .legal-section h4 {
+            font-size: 8.8pt;
+            font-weight: bold;
+            color: #212529;
+            margin-top: 0;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #d0d7de;
+            padding-bottom: 3px;
+        }
+
+        .clause-item {
+            margin-bottom: 6px;
+            font-size: 7.6pt;
+            line-height: 1.35;
+            color: #24292f;
+            text-align: justify;
+        }
+
+        .clause-title {
+            font-weight: bold;
+            color: #0969da;
+        }
+
+        .signature-section {
+            margin-top: 24px;
+            margin-bottom: 10px;
+            width: 100%;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .signature-box {
+            width: 46%;
+            border: 1px solid #b0b8c1;
+            background-color: #fdfdfd;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 8pt;
+            line-height: 1.4;
+            vertical-align: top;
+        }
+
+        .signature-line {
+            margin-top: 35px;
+            border-top: 1px solid #000000;
+            padding-top: 4px;
+        }
+
+        .footer-note {
+            margin-top: 12px;
+            font-size: 7.2pt;
+            color: #666666;
+            border-top: 1px dashed #cccccc;
+            padding-top: 5px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Table -->
+    <table class="header-table">
+        <tr>
+            <td style="width: 55%;">
+                <div class="company-title">CERMS ERP SYSTEM</div>
+                <div class="company-subtitle">
+                    <strong>Construction Equipment Rental & Fleet Management</strong><br>
+                    No. 150, High Level Road, Colombo 06, Sri Lanka<br>
+                    Tel: +94 11 234 5678 | Email: contracts@cerms-erp.lk<br>
+                    VAT Reg No: <strong>VAT-119874521-7000</strong>
+                </div>
+            </td>
+            <td style="width: 45%;">
+                <div class="contract-title">RENTAL CONTRACT AGREEMENT</div>
+                <div class="meta-box" style="margin-top: 4px;">
+                    <strong>Contract No:</strong> <span class="font-mono" style="font-size: 10.5pt; font-weight: bold; color: #0d6efd;">{{ contract.contract_no }}</span><br>
+                    <strong>Originating Quotation:</strong> <span class="font-mono">{{ quotation.quotation_no }}</span><br>
+                    <strong>Execution Date:</strong> {{ contract.created_at|date:"Y-m-d" }}<br>
+                    <strong>Agreed Billing Cycle:</strong> <span style="font-weight: bold; color: #0d6efd;">{{ contract.get_billing_cycle_display }}</span><br>
+                    <strong>Operational Status:</strong>
+                    <span class="status-badge {% if contract.status == 'ON_RENT' %}status-on-rent{% elif contract.status == 'RETURNED' %}status-returned{% elif contract.status == 'CLOSED' %}status-closed{% else %}status-active{% endif %}">
+                        {{ contract.get_status_display }}
+                    </span>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="divider"></div>
+
+    <!-- Preamble -->
+    <div style="font-size: 7.8pt; line-height: 1.35; margin-bottom: 8px; color: #333333; text-align: justify;">
+        This Binding Rental Contract Agreement (the <strong>"Agreement"</strong>) is entered into as of <strong>{{ contract.created_at|date:"F d, Y" }}</strong>, by and between <strong>CERMS Heavy Equipment Rentals (Pvt) Ltd</strong> (the <strong>"Lessor"</strong>), and the Customer named herein below (the <strong>"Lessee"</strong>), for the lease and site deployment of industrial machinery assets described below.
+    </div>
+
+    <!-- Contracting Parties & Project Site Details -->
+    <table style="width: 100%; margin-bottom: 8px;">
+        <tr>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>The Lessee (Customer Organization)</h4>
+                    <strong>{{ customer.company_name }}</strong> (<span class="font-mono">{{ customer.customer_code }}</span>)<br>
+                    {{ customer.billing_address|linebreaksbr }}<br>
+                    <strong>Authorized Representative:</strong> {{ customer.contact_person }} ({{ customer.phone }})<br>
+                    <strong>Email:</strong> {{ customer.email|default:"N/A" }}<br>
+                    <strong>Tax / VAT Reg No:</strong> {{ customer.vat_tax_number|default:"N/A" }}
+                </div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card">
+                    <h4>Deployment Site & Contract Period</h4>
+                    <strong>Project Site:</strong> {{ project_site.project_name }} (<span class="font-mono">{{ project_site.project_code }}</span>)<br>
+                    <strong>Site Address:</strong> {{ project_site.site_address }}<br>
+                    <strong>Site Contact:</strong> {{ project_site.site_contact_person }} ({{ project_site.site_contact_phone }})<br>
+                    <strong>Commencement Date:</strong> <strong>{{ contract.contract_start_date|date:"Y-m-d" }}</strong><br>
+                    <strong>Scheduled Return Date:</strong> <strong>{{ contract.contract_end_date|date:"Y-m-d" }}</strong>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Contracted Equipment Asset Roster -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 5%;" class="text-center">#</th>
+                <th style="width: 42%;">Machinery Asset Specifications</th>
+                <th style="width: 25%;">Serial / VIN & Meter Reading</th>
+                <th style="width: 13%;" class="text-center">Schedule / Term</th>
+                <th style="width: 15%;" class="text-end">Agreed Rate</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if contract_items %}
+                {% for item in contract_items %}
+                <tr>
+                    <td class="text-center font-mono">{{ forloop.counter|stringformat:"02d" }}</td>
+                    <td>
+                        <strong>{{ item.equipment.equipment_name }}</strong> (<span class="font-mono">{{ item.equipment.asset_code }}</span>)<br>
+                        <small style="color: #555555;">
+                            Category: {{ item.equipment.category.name }} &bull; Brand/Model: {{ item.equipment.brand }} {{ item.equipment.model_number }}<br>
+                            Mfg Year: {{ item.equipment.manufacture_year }}
+                        </small>
+                    </td>
+                    <td>
+                        Serial / VIN: <span class="font-mono"><strong>{{ item.equipment.serial_number }}</strong></span><br>
+                        <small style="color: #555555;">Hour Meter: <span class="font-mono">{{ item.equipment.current_hour_meter }} hrs</span></small>
+                    </td>
+                    <td class="text-center">
+                        <small>{{ item.start_date|date:"Y-m-d" }} to {{ item.end_date|date:"Y-m-d" }}</small><br>
+                        <span class="badge bg-secondary font-mono" style="font-size: 7.5pt;">{{ item.get_rate_type_display }}</span>
+                    </td>
+                    <td class="text-end font-mono">
+                        Rs. {{ item.rate_applied|floatformat:2 }}<br>
+                        <small style="color: #666666;">Tot: Rs. {{ item.subtotal_amount|floatformat:2 }}</small>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% elif equipment %}
+                <tr>
+                    <td class="text-center font-mono">01</td>
+                    <td>
+                        <strong>{{ equipment.equipment_name }}</strong> (<span class="font-mono">{{ equipment.asset_code }}</span>)<br>
+                        <small style="color: #555555;">
+                            Category: {{ equipment.category.name }} &bull; Brand/Model: {{ equipment.brand }} {{ equipment.model_number }}<br>
+                            Mfg Year: {{ equipment.manufacture_year }}
+                        </small>
+                    </td>
+                    <td>
+                        Serial / VIN: <span class="font-mono"><strong>{{ equipment.serial_number }}</strong></span><br>
+                        <small style="color: #555555;">Hour Meter: <span class="font-mono">{{ equipment.current_hour_meter }} hrs</span></small>
+                    </td>
+                    <td class="text-center">
+                        <small>{{ contract.contract_start_date|date:"Y-m-d" }} to {{ contract.contract_end_date|date:"Y-m-d" }}</small><br>
+                        <span class="badge bg-secondary font-mono" style="font-size: 7.5pt;">{{ contract.get_billing_cycle_display }}</span>
+                    </td>
+                    <td class="text-end font-mono">
+                        Rs. {{ contract.agreed_rate|floatformat:2 }}
+                    </td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <!-- Commercial Financial Terms & Escrow Deposit Details -->
+    <table class="keep-together" style="width: 100%; margin-bottom: 8px;">
+        <tr>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card" style="font-size: 8pt;">
+                    <h4 style="font-size: 8.5pt;">Escrow Security Deposit & Financial Terms</h4>
+                    <strong>Deposit Collected & Held in Escrow:</strong>
+                    <span class="font-mono" style="font-size: 9.5pt; font-weight: bold; color: #198754;">Rs. {{ contract.deposit_paid|floatformat:2 }}</span><br>
+                    <strong>Agreed Billing Cycle:</strong> {{ contract.get_billing_cycle_display }} Invoicing<br>
+                    <strong>Contract Total Subtotal:</strong> <span class="font-mono">Rs. {{ contract.total_subtotal|floatformat:2 }}</span><br>
+                    <small style="color: #666666;">Security deposit will be held as collateral throughout the rental period and credited or refunded upon demobilization inspection.</small>
+                </div>
+            </td>
+            <td style="width: 4%;"></td>
+            <td style="width: 48%; vertical-align: top;">
+                <div class="info-card" style="font-size: 8pt;">
+                    <h4 style="font-size: 8.5pt;">Operational Thresholds</h4>
+                    <strong>Standard Shift Operating Allowance:</strong> 8 Hours per Calendar Day<br>
+                    <strong>Overtime Hour-Meter Billing:</strong> Applicable per standard hourly tariff<br>
+                    <strong>Fuel Status at Handover:</strong> 100% Full Tank (Return full or pay differential)<br>
+                    <strong>Mobilization Low-Bed Logistics:</strong> As agreed per quotation {{ quotation.quotation_no }}
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Official Legal Contract Terms & Liability Clauses -->
+    <div class="legal-section">
+        <h4>Binding Legal Terms, Conditions & Liability Clauses</h4>
+
+        <div class="clause-item">
+            <span class="clause-title">1. OPERATING HOURS & OVERTIME HOUR-METER RULES:</span>
+            The agreed rental tariff permits standard machine operation of up to eight (8) operating hours per single working shift per calendar day. Operating hours recorded on the machinery hour-meter exceeding this threshold shall be deemed excess overtime hours and billed to the Lessee at the standard overtime hourly tariff on each periodic invoice or upon final return settlement.
+        </div>
+
+        <div class="clause-item">
+            <span class="clause-title">2. MACHINE OPERATION, SUPERVISION & FUEL RESPONSIBILITY:</span>
+            The Lessee warrants that machinery will be operated strictly by licensed, qualified, and competent operators in accordance with manufacturer technical guidelines and factory load thresholds. Machinery is dispatched with a full tank of specified clean fuel. The Lessee must return the machinery with a full fuel tank; failing which, refueling will be billed at prevailing commercial retail rates plus a 15% administrative service surcharge. Daily preventative inspections, lubricant top-ups, tire/track visual monitoring, and coolant checks are the direct responsibility of the Lessee.
+        </div>
+
+        <div class="clause-item">
+            <span class="clause-title">3. BREAKDOWN & MAINTENANCE LIABILITY CLAUSES:</span>
+            (a) The Lessor (CERMS) remains responsible for routine scheduled preventative maintenance and wear-and-tear repairs resulting from ordinary, prudent machine operation.<br>
+            (b) In the event of mechanical breakdown, malfunction, or structural failure, the Lessee must cease operation immediately and notify CERMS within two (2) hours. Continued operation following an alarm, fluid leak, or warning signal shall constitute gross negligence.<br>
+            (c) Any damage or breakdown arising from operator error, hazardous site ground conditions, overloading, contaminated fuel, physical impact, roll-over, or unauthorized third-party repairs is the sole financial and operational liability of the Lessee. Repair costs, replacement parts, and downtime rental charges will be charged to the Lessee or deducted from the held security deposit.
+        </div>
+
+        <div class="clause-item">
+            <span class="clause-title">4. SITE SECURITY, INDEMNIFICATION & THIRD-PARTY RISK:</span>
+            The Lessee shall maintain 24-hour physical security over the equipment at the project site. The Lessee indemnifies and holds harmless CERMS, its officers, and employees against any third-party claims, legal actions, property damage, bodily injury, environmental spill remediation, or wrongful death occurring during or connected with the custody, storage, or operation of the leased machinery.
+        </div>
+
+        <div class="clause-item">
+            <span class="clause-title">5. ESCROW SECURITY DEPOSIT & SETTLEMENT RECONCILIATION:</span>
+            The security deposit of Rs. {{ contract.deposit_paid|floatformat:2 }} is held in escrow by CERMS. Upon demobilization, a joint Physical Dispatch & Return Inspection shall be conducted. CERMS will issue a Final Commercial Tax Invoice reconciling accrued rental fees, excess operating hours, fuel variances, and damage recovery charges, offset against the escrow security deposit. Any remaining credit balance will be refunded within seven (7) banking days.
+        </div>
+
+        <div class="clause-item">
+            <span class="clause-title">6. TITLE, OWNERSHIP & RIGHT OF REPOSSESSION:</span>
+            Title and ownership of the machinery remain exclusively with CERMS at all times. This Agreement constitutes a pure lease and creates no equitable interest, lien, or ownership option for the Lessee. In the event of default on payment, breach of maintenance covenants, or insolvency, CERMS reserves the immediate right to enter the Lessee's site and repossess the machinery without judicial process or prior notice.
+        </div>
+    </div>
+
+    <!-- Dual Signatures Section (Company & Customer) -->
+    <table class="signature-section">
+        <tr>
+            <td class="signature-box">
+                <strong style="color: #0d6efd; text-transform: uppercase;">For the Lessor (CERMS Enterprise)</strong><br>
+                CERMS Heavy Equipment Rentals (Pvt) Ltd<br><br>
+                <div class="signature-line">
+                    <strong>Authorized Officer:</strong> ___________________________________<br>
+                    <strong>Designation:</strong> Head of Fleet & Rental Operations<br>
+                    <strong>Date:</strong> {{ contract.created_at|date:"Y-m-d" }}<br>
+                    <strong>Corporate Seal / Official Stamp:</strong>
+                </div>
+            </td>
+            <td style="width: 8%;"></td>
+            <td class="signature-box">
+                <strong style="color: #212529; text-transform: uppercase;">For the Lessee (Customer Organization)</strong><br>
+                {{ customer.company_name }}<br><br>
+                <div class="signature-line">
+                    <strong>Authorized Signatory:</strong> ___________________________________<br>
+                    <strong>Signatory Name:</strong> {{ customer.contact_person }}<br>
+                    <strong>Designation:</strong> ___________________________________<br>
+                    <strong>Date:</strong> ___________________________________<br>
+                    <strong>Lessee Corporate Seal / Stamp:</strong>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer-note text-center">
+        This document constitutes a legally binding contract executed under the Laws of the Democratic Socialist Republic of Sri Lanka.<br>
+        Both parties acknowledge receipt and unconditional acceptance of the terms, operating conditions, and liability clauses stated herein.
+    </div>
+
+</body>
+</html>

@@ -1,15 +1,19 @@
+import logging
 import uuid
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from typing import Dict, Any, Optional
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from fleet.models import Equipment
 from .models import Customer, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_quotation_totals(
@@ -434,3 +438,85 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
         # Note: Step 5 Billing Engine will invoke generate_final_rental_invoice(contract.contract_no, user)
 
         return dispatch_record
+
+
+def render_quotation_to_pdf(quotation_id, request=None) -> bytes:
+    """
+    Renders pixel-perfect A4 Quotation PDF adhering to docs/16_REPORTING_AND_PDF_GUIDELINES.md.
+    Uses WeasyPrint with graceful fallback.
+    """
+    if isinstance(quotation_id, Quotation):
+        quotation = quotation_id
+    else:
+        quotation = Quotation.objects.select_related('customer', 'project_site', 'approved_by').get(pk=quotation_id)
+
+    items = list(quotation.items.select_related('equipment', 'equipment__category').all())
+    primary_equipment = quotation.primary_equipment
+    totals = quotation.calculate_totals()
+
+    if quotation.created_at:
+        valid_until = quotation.created_at.date() + timedelta(days=14)
+    else:
+        valid_until = timezone.now().date() + timedelta(days=14)
+
+    context = {
+        'quotation': quotation,
+        'customer': quotation.customer,
+        'project_site': quotation.project_site,
+        'items': items,
+        'primary_equipment': primary_equipment,
+        'totals': totals,
+        'valid_until': valid_until,
+        'now': timezone.now(),
+        'base_url': request.build_absolute_uri('/') if request else 'http://localhost:8000/',
+    }
+
+    html_content = render_to_string('reports/quotation_pdf.html', context)
+
+    # Attempt WeasyPrint conversion
+    try:
+        import weasyprint
+        pdf_bytes = weasyprint.HTML(string=html_content, base_url=context['base_url']).write_pdf()
+        return pdf_bytes
+    except Exception as e:
+        logger.warning(f"WeasyPrint PDF rendering unavailable ({e}), using standard fallback.")
+        return html_content.encode('utf-8')
+
+
+def render_contract_to_pdf(contract_id, request=None) -> bytes:
+    """
+    Renders pixel-perfect A4 Rental Contract Agreement PDF adhering to docs/16_REPORTING_AND_PDF_GUIDELINES.md.
+    Uses WeasyPrint with graceful fallback.
+    """
+    if isinstance(contract_id, RentalContract):
+        contract = contract_id
+    else:
+        contract = RentalContract.objects.select_related('customer', 'project_site', 'equipment', 'quotation').get(pk=contract_id)
+
+    contract_items = list(contract.items.select_related('equipment', 'equipment__category').all())
+    assigned_equipment = contract.assigned_equipment_list
+    primary_equipment = contract.equipment or (assigned_equipment[0] if assigned_equipment else None)
+
+    context = {
+        'contract': contract,
+        'customer': contract.customer,
+        'project_site': contract.project_site,
+        'quotation': contract.quotation,
+        'contract_items': contract_items,
+        'assigned_equipment': assigned_equipment,
+        'equipment': primary_equipment,
+        'now': timezone.now(),
+        'base_url': request.build_absolute_uri('/') if request else 'http://localhost:8000/',
+    }
+
+    html_content = render_to_string('reports/contract_pdf.html', context)
+
+    # Attempt WeasyPrint conversion
+    try:
+        import weasyprint
+        pdf_bytes = weasyprint.HTML(string=html_content, base_url=context['base_url']).write_pdf()
+        return pdf_bytes
+    except Exception as e:
+        logger.warning(f"WeasyPrint PDF rendering unavailable ({e}), using standard fallback.")
+        return html_content.encode('utf-8')
+

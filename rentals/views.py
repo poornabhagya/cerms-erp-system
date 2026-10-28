@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum, Count
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
@@ -20,7 +20,9 @@ from .services import (
     validate_customer_credit_limit,
     convert_quotation_to_contract,
     process_equipment_dispatch,
-    process_equipment_return
+    process_equipment_return,
+    render_quotation_to_pdf,
+    render_contract_to_pdf
 )
 
 
@@ -439,6 +441,27 @@ class QuotationDetailView(RoleRequiredMixin, DetailView):
         return context
 
 
+class QuotationPDFDownloadView(RoleRequiredMixin, View):
+    """
+    Generates and streams the pixel-perfect A4 WeasyPrint PDF document for a commercial Quotation.
+    """
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get(self, request, quotation_no):
+        quotation = get_object_or_404(Quotation, quotation_no=quotation_no)
+        pdf_bytes = render_quotation_to_pdf(quotation, request=request)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        download = request.GET.get('download', '0') == '1'
+        disposition = 'attachment' if download else 'inline'
+        response['Content-Disposition'] = f'{disposition}; filename="Quotation-{quotation.quotation_no}.pdf"'
+        return response
+
+
 class QuotationCreateView(RoleRequiredMixin, CreateView):
     """View to build and issue a new commercial Quotation with multi-asset line items."""
     model = Quotation
@@ -825,6 +848,29 @@ class RentalContractDetailView(RoleRequiredMixin, DetailView):
         context['can_return'] = active_dispatches.exists()
 
         return context
+
+
+class ContractPDFDownloadView(RoleRequiredMixin, View):
+    """
+    Generates and streams the pixel-perfect A4 WeasyPrint PDF document for a Rental Contract Agreement.
+    """
+    allowed_roles = (
+        User.Role.RENTAL_OFFICER,
+        User.Role.OPERATIONS_OFFICER,
+        User.Role.WORKSHOP_MANAGER,
+        User.Role.ACCOUNTANT,
+        User.Role.MANAGEMENT,
+        User.Role.ADMINISTRATOR,
+    )
+
+    def get(self, request, contract_no):
+        contract = get_object_or_404(RentalContract, contract_no=contract_no)
+        pdf_bytes = render_contract_to_pdf(contract, request=request)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        download = request.GET.get('download', '0') == '1'
+        disposition = 'attachment' if download else 'inline'
+        response['Content-Disposition'] = f'{disposition}; filename="Contract-{contract.contract_no}.pdf"'
+        return response
 
 
 class DispatchCreateView(RoleRequiredMixin, CreateView):

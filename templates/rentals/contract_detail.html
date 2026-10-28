@@ -63,6 +63,14 @@
                 <i class="bi bi-file-earmark-text me-1"></i> View Quotation
             </a>
         {% endif %}
+
+        <!-- WeasyPrint PDF Generation & Download -->
+        <a href="{% url 'rentals:contract_pdf' contract_no=contract.contract_no %}" target="_blank" class="btn btn-outline-danger shadow-sm">
+            <i class="bi bi-file-earmark-pdf me-1"></i> View Contract PDF
+        </a>
+        <a href="{% url 'rentals:contract_pdf' contract_no=contract.contract_no %}?download=1" class="btn btn-danger shadow-sm">
+            <i class="bi bi-download me-1"></i> Download PDF
+        </a>
     </div>
 </div>
 
@@ -226,10 +234,15 @@
                     </a>
                 </div>
                 {% else %}
-                <div class="text-muted small text-center p-2 bg-light rounded border">
-                    <i class="bi bi-info-circle me-1"></i> No signed PDF copy uploaded yet.
+                <div class="text-muted small text-center p-2 bg-light rounded border mb-2">
+                    <i class="bi bi-info-circle me-1"></i> No countersigned copy uploaded yet.
                 </div>
                 {% endif %}
+                <div>
+                    <a href="{% url 'rentals:contract_pdf' contract_no=contract.contract_no %}?download=1" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="bi bi-file-earmark-arrow-down me-1"></i> Download System Agreement PDF
+                    </a>
+                </div>
             </div>
         </div>
     </div>
