@@ -449,6 +449,8 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
         dispatch_record.damage_reported = damage_reported
         dispatch_record.damage_notes = damage_notes
         dispatch_record.excess_hours_calculated = excess_hours
+        # Prevent premature signal execution so service layer can provide damage charges
+        dispatch_record._skip_return_invoice_signal = True
         dispatch_record.save()
 
         # Update Equipment current meter reading & status
@@ -477,7 +479,30 @@ def process_equipment_return(dispatch_return_id: str, return_data: Dict[str, Any
         contract.save(update_fields=['status', 'updated_at'])
 
         # --- Automated Finance Integration Hook ---
-        # Note: Step 5 Billing Engine will invoke generate_final_rental_invoice(contract.contract_no, user)
+        # If all active on-site equipment under this contract has now been returned,
+        # automatically calculate finalized charges (excess hours + damages) and generate final Tax Invoice.
+        dispatch_record.generated_invoice = None
+        if not has_other_active_dispatches:
+            from finance.services import generate_final_rental_invoice
+            damage_charges = Decimal(str(return_data.get('damage_charges', '0.00') or '0.00'))
+            try:
+                invoice = generate_final_rental_invoice(
+                    contract_id=contract.contract_no,
+                    user=user,
+                    damage_charges=damage_charges,
+                )
+                dispatch_record.generated_invoice = invoice
+                if contract.status != RentalContract.Status.CLOSED:
+                    contract.status = RentalContract.Status.CLOSED
+                    contract.save(update_fields=['status', 'updated_at'])
+                logger.info(
+                    f"Automated Return-to-Invoice generated invoice '{invoice.invoice_no}' for Contract '{contract.contract_no}'."
+                )
+            except Exception as e:
+                logger.error(
+                    f"Automated Return-to-Invoice generation failed for Contract '{contract.contract_no}': {e}",
+                    exc_info=True
+                )
 
         return dispatch_record
 

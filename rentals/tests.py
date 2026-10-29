@@ -1,11 +1,12 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from django.utils import timezone
 from django.test import TestCase, Client
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
 from users.models import User
-from fleet.models import Category, Equipment
+from fleet.models import Category, Equipment, RentalRate
 from .models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
 from .services import (
     validate_customer_credit_limit,
@@ -2822,6 +2823,344 @@ class SeedDummyDataCommandTests(TestCase):
         self.assertEqual(Customer.objects.filter(customer_code__startswith='CUST-DUMMY-').count(), 10)
         self.assertEqual(Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-').count(), 50)
         self.assertEqual(RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-').count(), 20)
+
+
+class AutomatedReturnToInvoiceTriggerTestCase(TestCase):
+    """
+    Test suite for the Automated Return-to-Invoice Trigger.
+    Verifies that when equipment is returned from rent, final charges
+    (rental tariff, overtime hours, damages, security deposit offset)
+    are calculated automatically and the Tax Invoice is created without
+    manual finance module intervention.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='auto_inv_admin',
+            email='autoinv_admin@test.com',
+            password='password123',
+            role=User.Role.ADMINISTRATOR
+        )
+        self.officer = User.objects.create_user(
+            username='auto_inv_officer',
+            email='autoinv_officer@test.com',
+            password='password123',
+            role=User.Role.OPERATIONS_OFFICER
+        )
+        self.workshop = User.objects.create_user(
+            username='auto_inv_workshop',
+            email='autoinv_workshop@test.com',
+            password='password123',
+            role=User.Role.WORKSHOP_MANAGER
+        )
+
+        self.customer = Customer.objects.create(
+            customer_code='CUST-AUTO-INV-001',
+            company_name='Auto Invoice Test Corp',
+            contact_person='Test Contact',
+            phone='+94 11 2345678',
+            email='autoinv@test.com',
+            billing_address='100 Test St, Colombo',
+            credit_limit=Decimal('5000000.00'),
+            current_outstanding_balance=Decimal('0.00'),
+            status=Customer.Status.ACTIVE
+        )
+
+        self.site = ProjectSite.objects.create(
+            project_code='PRJ-AUTO-INV-01',
+            customer=self.customer,
+            project_name='Auto Invoice Site',
+            site_address='Test Site Location',
+            status=ProjectSite.Status.ACTIVE
+        )
+
+        self.category = Category.objects.create(name='Heavy Excavators', code='HEXC')
+
+        self.equipment = Equipment.objects.create(
+            asset_code='EQ-AUTO-INV-001',
+            equipment_name='Auto Inv Excavator 320D',
+            category=self.category,
+            brand='Caterpillar',
+            model_number='320D',
+            serial_number='VIN-AUTO-INV-001',
+            manufacture_year=2022,
+            purchase_cost=Decimal('25000000.00'),
+            purchase_date=date(2022, 1, 1),
+            current_hour_meter=Decimal('1000.00'),
+            status=Equipment.Status.ON_RENT
+        )
+
+        self.rate_card = RentalRate.objects.create(
+            equipment=self.equipment,
+            daily_rate=Decimal('40000.00'),
+            weekly_rate=Decimal('240000.00'),
+            monthly_rate=Decimal('880000.00'),
+            hourly_rate=Decimal('5000.00'),
+            overtime_hourly_rate=Decimal('6250.00'),
+            minimum_rental_hours=8,
+            effective_from=date(2026, 1, 1),
+            is_active=True
+        )
+
+        # 5-day rental: (today - 4 days to today) = 5 inclusive days; standard allowance = 5 * 8 = 40 hours
+        self.start_date = timezone.now().date() - timedelta(days=4)
+        self.end_date = timezone.now().date()
+
+        self.quotation = Quotation.objects.create(
+            quotation_no='QT-AUTO-INV-001',
+            customer=self.customer,
+            project_site=self.site,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            rate_type=Quotation.RateType.DAILY,
+            estimated_transport_cost=Decimal('30000.00'),
+            security_deposit_required=Decimal('100000.00'),
+            subtotal_amount=Decimal('200000.00'),
+            total_tax_amount=Decimal('41400.00'),
+            grand_total_amount=Decimal('271400.00'),
+            status=Quotation.Status.CONVERTED
+        )
+
+        self.contract = RentalContract.objects.create(
+            contract_no='CNT-AUTO-INV-001',
+            quotation=self.quotation,
+            customer=self.customer,
+            project_site=self.site,
+            equipment=self.equipment,
+            contract_start_date=self.start_date,
+            contract_end_date=self.end_date,
+            agreed_rate=Decimal('40000.00'),
+            deposit_paid=Decimal('100000.00'),
+            status=RentalContract.Status.ON_RENT
+        )
+
+        self.contract_item = RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=self.equipment,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            rate_applied=Decimal('40000.00'),
+            rate_type=Quotation.RateType.DAILY,
+            subtotal_amount=Decimal('200000.00')
+        )
+
+        # Dispatch log: dispatched at meter 1000.00
+        tz = timezone.get_current_timezone()
+        disp_dt = timezone.make_aware(
+            datetime.combine(self.start_date, datetime.min.time().replace(hour=8, minute=0)),
+            tz
+        )
+        self.dispatch = DispatchReturn.objects.create(
+            transaction_id='TRX-AUTO-INV-001',
+            contract=self.contract,
+            equipment=self.equipment,
+            dispatch_datetime=disp_dt,
+            dispatch_hour_meter=Decimal('1000.00'),
+            dispatch_fuel_level=Decimal('100.00'),
+            dispatch_officer=self.officer,
+            dispatch_checklist={'engine': 'Good', 'tires': 'Good'}
+        )
+
+    def test_process_equipment_return_triggers_automated_invoice(self):
+        """
+        Verify that returning equipment via process_equipment_return automatically:
+        1. Calculates excess hours and overtime charge.
+        2. Applies damage charges.
+        3. Offsets security deposit held in escrow.
+        4. Calculates statutory VAT (18%).
+        5. Creates the Tax Invoice record with PDF.
+        6. Updates Customer outstanding balance.
+        7. Transitions RentalContract status to CLOSED.
+        """
+        from rentals.services import process_equipment_return
+        from finance.models import Invoice
+
+        # Standard hours: 5 days * 8 hrs = 40 hrs.
+        # Returned with meter 1050.00 -> 50 hours operated -> 10 excess hours!
+        ret_data = {
+            'return_datetime': timezone.now(),
+            'return_hour_meter': Decimal('1050.00'),
+            'return_fuel_level': Decimal('90.00'),
+            'has_minor_damage': True,
+            'requires_maintenance': False,
+            'damage_reported': True,
+            'damage_notes': 'Slight scratch on side bumper.',
+            'damage_charges': Decimal('15000.00'),
+            'return_checklist': {'hydraulics': 'Pass', 'cabin': 'Pass'}
+        }
+
+        record = process_equipment_return(self.dispatch.transaction_id, ret_data, user=self.workshop)
+
+        self.assertIsNotNone(record.return_datetime)
+        self.assertEqual(record.hours_operated, Decimal('50.00'))
+        self.assertEqual(record.excess_hours_calculated, Decimal('10.00'))
+
+        # Verify automated invoice generation
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, RentalContract.Status.CLOSED)
+
+        invoices = self.contract.invoices.all()
+        self.assertEqual(invoices.count(), 1)
+        invoice = invoices.first()
+
+        self.assertEqual(invoice.contract, self.contract)
+        self.assertEqual(invoice.customer, self.customer)
+        self.assertEqual(invoice.rental_subtotal, Decimal('200000.00'))
+        self.assertEqual(invoice.transport_charges, Decimal('30000.00'))
+
+        # Overtime charge: 10 hrs * Rs. 6,250 = Rs. 62,500.00
+        self.assertEqual(invoice.excess_hours_charge, Decimal('62500.00'))
+        self.assertEqual(invoice.damage_charges, Decimal('15000.00'))
+
+        # Taxable base: 200,000 + 30,000 + 62,500 + 15,000 = 307,500.00
+        # VAT 18%: 307,500 * 0.18 = 55,350.00
+        # Gross total: 307,500 + 55,350 = 362,850.00
+        # Deposit offset: 100,000.00
+        # Net payable: 362,850 - 100,000 = 262,850.00
+        self.assertEqual(invoice.deposit_deducted, Decimal('100000.00'))
+        self.assertEqual(invoice.tax_amount, Decimal('55350.00'))
+        self.assertEqual(invoice.net_total_payable, Decimal('262850.00'))
+        self.assertEqual(invoice.status, Invoice.Status.UNPAID)
+
+        # Customer balance updated
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.current_outstanding_balance, Decimal('262850.00'))
+
+    def test_multi_asset_return_triggers_invoice_only_when_all_returned(self):
+        """
+        In a multi-asset contract, returning the first machine must leave the contract ON_RENT
+        without generating an invoice. When the last machine is returned, the final invoice
+        must trigger automatically and aggregate excess hours from all equipment.
+        """
+        from rentals.services import process_equipment_return
+
+        # Add second equipment to this contract
+        eq2 = Equipment.objects.create(
+            asset_code='EQ-AUTO-INV-002',
+            equipment_name='Auto Inv Generator 100kVA',
+            category=self.category,
+            brand='Cummins',
+            model_number='100KVA',
+            serial_number='VIN-AUTO-INV-002',
+            manufacture_year=2023,
+            purchase_cost=Decimal('8000000.00'),
+            purchase_date=date(2023, 1, 1),
+            current_hour_meter=Decimal('500.00'),
+            status=Equipment.Status.ON_RENT
+        )
+        RentalRate.objects.create(
+            equipment=eq2,
+            daily_rate=Decimal('20000.00'),
+            is_active=True
+        )
+        RentalContractItem.objects.create(
+            contract=self.contract,
+            equipment=eq2,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            rate_applied=Decimal('20000.00'),
+            rate_type=Quotation.RateType.DAILY,
+            subtotal_amount=Decimal('100000.00')
+        )
+
+        tz = timezone.get_current_timezone()
+        disp_dt = timezone.make_aware(
+            datetime.combine(self.start_date, datetime.min.time().replace(hour=9, minute=0)),
+            tz
+        )
+        dispatch2 = DispatchReturn.objects.create(
+            transaction_id='TRX-AUTO-INV-002',
+            contract=self.contract,
+            equipment=eq2,
+            dispatch_datetime=disp_dt,
+            dispatch_hour_meter=Decimal('500.00'),
+            dispatch_fuel_level=Decimal('100.00'),
+            dispatch_officer=self.officer
+        )
+
+        # 1. Return first machine (Excavator)
+        ret1 = {
+            'return_datetime': timezone.now(),
+            'return_hour_meter': Decimal('1045.00'),  # 5 excess hours
+            'return_fuel_level': Decimal('95.00'),
+            'damage_charges': Decimal('0.00'),
+            'return_checklist': {}
+        }
+        process_equipment_return(self.dispatch.transaction_id, ret1, user=self.workshop)
+
+        self.contract.refresh_from_db()
+        # Machine 2 is still out -> Contract remains ON_RENT, no invoice yet
+        self.assertEqual(self.contract.status, RentalContract.Status.ON_RENT)
+        self.assertEqual(self.contract.invoices.count(), 0)
+
+        # 2. Return second machine (Generator)
+        ret2 = {
+            'return_datetime': timezone.now(),
+            'return_hour_meter': Decimal('548.00'),  # 8 excess hours
+            'return_fuel_level': Decimal('90.00'),
+            'damage_charges': Decimal('5000.00'),
+            'return_checklist': {}
+        }
+        process_equipment_return(dispatch2.transaction_id, ret2, user=self.workshop)
+
+        self.contract.refresh_from_db()
+        # All equipment returned -> Contract CLOSED and Invoice generated!
+        self.assertEqual(self.contract.status, RentalContract.Status.CLOSED)
+        self.assertEqual(self.contract.invoices.count(), 1)
+
+        inv = self.contract.invoices.first()
+        self.assertEqual(inv.damage_charges, Decimal('5000.00'))
+        # Total excess hours across both: 5 (eq1) + 8 (eq2) = 13 hours
+        self.assertTrue(inv.excess_hours_charge > Decimal('0.00'))
+
+    def test_return_create_view_integration(self):
+        """
+        Verify that submitting ReturnCreateView via HTTP POST:
+        - Successfully redirects to contract_detail.
+        - Emits success message with invoice confirmation.
+        - Transitions contract to CLOSED.
+        - Creates the commercial Tax Invoice.
+        """
+        self.client.force_login(self.workshop)
+        url = reverse('rentals:return_create', kwargs={'transaction_id': self.dispatch.transaction_id})
+
+        post_data = {
+            'return_datetime': timezone.now().strftime('%Y-%m-%dT%H:%M'),
+            'return_hour_meter': '1040.0',
+            'return_fuel_level': '95.00',
+            'has_minor_damage': '',
+            'requires_maintenance': '',
+            'damage_notes': '',
+            'damage_charges': '0.00',
+            'damage_reported': '',
+            'return_checklist': '{"engine":"pass"}',
+        }
+
+        resp = self.client.post(url, post_data, follow=True)
+        self.assertRedirects(resp, reverse('rentals:contract_detail', kwargs={'contract_no': self.contract.contract_no}))
+
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, RentalContract.Status.CLOSED)
+        self.assertEqual(self.contract.invoices.count(), 1)
+
+        messages = [m.message for m in resp.context['messages']]
+        self.assertTrue(any('automatically generated' in m for m in messages))
+
+    def test_post_save_signal_triggers_invoice_on_direct_save(self):
+        """
+        Verify that saving DispatchReturn directly with return_datetime triggers
+        the auto_trigger_return_to_invoice signal.
+        """
+        self.dispatch.return_datetime = timezone.now()
+        self.dispatch.return_hour_meter = Decimal('1040.00')
+        self.dispatch.return_fuel_level = Decimal('100.00')
+        self.dispatch.return_officer = self.workshop
+        self.dispatch.save()
+
+        self.contract.refresh_from_db()
+        self.assertEqual(self.contract.status, RentalContract.Status.CLOSED)
+        self.assertEqual(self.contract.invoices.count(), 1)
+
 
 
 

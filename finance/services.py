@@ -37,6 +37,22 @@ def generate_final_rental_invoice(
     with transaction.atomic():
         contract = RentalContract.objects.select_for_update().get(contract_no=contract_id)
 
+        # Check for existing finalized invoice for idempotency
+        existing_invoice = contract.invoices.filter(
+            status__in=[
+                Invoice.Status.UNPAID,
+                Invoice.Status.PAID,
+                Invoice.Status.PARTIALLY_PAID,
+                Invoice.Status.OVERDUE,
+            ]
+        ).first()
+        if existing_invoice:
+            logger.info(f"Invoice '{existing_invoice.invoice_no}' already exists for Contract '{contract.contract_no}'.")
+            if contract.status != RentalContract.Status.CLOSED:
+                contract.status = RentalContract.Status.CLOSED
+                contract.save(update_fields=['status', 'updated_at'])
+            return existing_invoice
+
         # Generate unique invoice sequence number
         current_year = timezone.now().year
         inv_count = Invoice.objects.filter(invoice_no__startswith=f"INV-{current_year}-").count() + 1
@@ -61,8 +77,18 @@ def generate_final_rental_invoice(
         if excess_hours_rate is not None and excess_hours_rate > Decimal('0.00'):
             rate_per_hour = Decimal(str(excess_hours_rate))
         else:
-            # Derived rate: Daily rate / 8 standard hours
-            rate_per_hour = (contract.agreed_rate / Decimal('8.00')).quantize(Decimal('0.01'))
+            # Check active rate card for overtime rate if available
+            eq = contract.equipment
+            ot_rate = None
+            if eq:
+                rc = eq.rental_rates.filter(is_active=True).first()
+                if rc and rc.overtime_hourly_rate:
+                    ot_rate = rc.overtime_hourly_rate
+            if ot_rate:
+                rate_per_hour = ot_rate
+            else:
+                # Derived rate: Daily rate / 8 standard hours
+                rate_per_hour = (contract.agreed_rate / Decimal('8.00')).quantize(Decimal('0.01'))
 
         excess_hours_charge = (excess_hours_total * rate_per_hour).quantize(Decimal('0.01'))
         damage_charges = Decimal(str(damage_charges or 0)).quantize(Decimal('0.01'))
@@ -133,7 +159,12 @@ def generate_final_rental_invoice(
         customer.current_outstanding_balance += net_total_payable
         customer.save(update_fields=['current_outstanding_balance', 'updated_at'])
 
-        # 9. Generate & Attach Official PDF
+        # 9. Mark Contract as CLOSED ("Closed & Invoiced")
+        if contract.status != RentalContract.Status.CLOSED:
+            contract.status = RentalContract.Status.CLOSED
+            contract.save(update_fields=['status', 'updated_at'])
+
+        # 10. Generate & Attach Official PDF
         try:
             pdf_bytes = render_invoice_to_pdf(invoice)
             if pdf_bytes:

@@ -1083,16 +1083,25 @@ class ReturnCreateView(RoleRequiredMixin, UpdateView):
             'requires_maintenance': form.cleaned_data.get('requires_maintenance', False),
             'damage_reported': form.cleaned_data.get('damage_reported', False),
             'damage_notes': form.cleaned_data.get('damage_notes', ''),
+            'damage_charges': form.cleaned_data.get('damage_charges') or Decimal('0.00'),
             'return_checklist': form.cleaned_data['return_checklist'],
         }
 
         try:
             record = process_equipment_return(self.object.transaction_id, return_data, user=self.request.user)
-            messages.success(
-                self.request,
+            msg = (
                 f"Equipment '{record.equipment.asset_code}' returned successfully. "
                 f"Total hours: {record.hours_operated} hrs (Excess: {record.excess_hours_calculated} hrs)."
             )
+            # Notify user of automated tax invoice generation
+            inv = getattr(record, 'generated_invoice', None)
+            if not inv and record.contract.invoices.exists():
+                inv = record.contract.invoices.order_by('-created_at').first()
+
+            if inv:
+                msg += f" Final Tax Invoice '{inv.invoice_no}' was automatically generated (Net: LKR {inv.net_total_payable:,.2f})."
+
+            messages.success(self.request, msg)
             return redirect('rentals:contract_detail', contract_no=record.contract.contract_no)
         except ValidationError as e:
             messages.error(self.request, str(e))

@@ -59,11 +59,24 @@ class Command(BaseCommand):
         # 2. Clear Existing Dummy Data If Requested
         # ---------------------------------------------------------------------
         if options.get('clear'):
+            from django.db import models as db_models
             self.stdout.write(self.style.WARNING("Clearing previously generated dummy data..."))
-            Payment.objects.filter(payment_id__startswith='PAY-DUMMY-').delete()
-            Invoice.objects.filter(invoice_no__startswith='INV-DUMMY-').delete()
-            SecurityDeposit.objects.filter(deposit_id__startswith='DEP-DUMMY-').delete()
-            DispatchReturn.objects.filter(transaction_id__startswith='TRX-DUMMY-').delete()
+            Payment.objects.filter(
+                db_models.Q(payment_id__startswith='PAY-DUMMY-') |
+                db_models.Q(invoice__contract__contract_no__startswith='CNT-DUMMY-')
+            ).delete()
+            Invoice.objects.filter(
+                db_models.Q(invoice_no__startswith='INV-DUMMY-') |
+                db_models.Q(contract__contract_no__startswith='CNT-DUMMY-')
+            ).delete()
+            SecurityDeposit.objects.filter(
+                db_models.Q(deposit_id__startswith='DEP-DUMMY-') |
+                db_models.Q(contract__contract_no__startswith='CNT-DUMMY-')
+            ).delete()
+            DispatchReturn.objects.filter(
+                db_models.Q(transaction_id__startswith='TRX-DUMMY-') |
+                db_models.Q(contract__contract_no__startswith='CNT-DUMMY-')
+            ).delete()
             RentalContractItem.objects.filter(contract__contract_no__startswith='CNT-DUMMY-').delete()
             RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-').delete()
             QuotationItem.objects.filter(quotation__quotation_no__startswith='QT-DUMMY-').delete()
@@ -73,7 +86,6 @@ class Command(BaseCommand):
             RentalRate.objects.filter(equipment__asset_code__startswith='EQ-DUMMY-').delete()
             Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-').delete()
             self.stdout.write(self.style.SUCCESS("  [SUCCESS] Cleared previously seeded dummy records."))
-
         fake = Faker()
 
         # Find or use staff users for audit fields

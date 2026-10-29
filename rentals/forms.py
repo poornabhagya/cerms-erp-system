@@ -724,6 +724,21 @@ class ReturnForm(forms.ModelForm):
     """
     Form for receiving machinery check-in and decoupled damage evaluation.
     """
+    damage_charges = forms.DecimalField(
+        label=_("Assessed Damage / Repair Charges (LKR)"),
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        initial=Decimal('0.00'),
+        min_value=Decimal('0.00'),
+        help_text=_("Optional repair or damage assessment penalty applied to the final tax invoice."),
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'step': '0.01',
+            'placeholder': '0.00',
+            'id': 'id_return_damage_charges',
+        })
+    )
 
     class Meta:
         model = DispatchReturn
@@ -780,6 +795,7 @@ class ReturnForm(forms.ModelForm):
                 ),
                 Div(
                     'damage_notes',
+                    'damage_charges',
                     css_id='return_damage_notes_container',
                     css_class='mt-2'
                 ),
@@ -800,4 +816,6 @@ class ReturnForm(forms.ModelForm):
         elif damage_rep and not (has_minor or req_maint):
             # If legacy form data passed damage_reported=True without specific checkboxes, default to maintenance
             cleaned_data['requires_maintenance'] = True
+        if cleaned_data.get('damage_charges') is None:
+            cleaned_data['damage_charges'] = Decimal('0.00')
         return cleaned_data
