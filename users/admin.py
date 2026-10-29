@@ -31,6 +31,19 @@ class UserAdmin(BaseUserAdmin):
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
     )
 
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        user = form.instance
+        if user.role:
+            group_name = user.get_role_display()
+            from django.contrib.auth.models import Group
+            try:
+                group = Group.objects.get(name=group_name)
+                if not user.groups.filter(pk=group.pk).exists():
+                    user.groups.add(group)
+            except Group.DoesNotExist:
+                pass
+
     add_fieldsets = (
         (None, {
             'classes': ('wide',),

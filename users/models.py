@@ -112,3 +112,24 @@ class User(AbstractUser, TimeStampedModel):
     def is_field_officer(self) -> bool:
         """Returns True if the user is a Field Officer."""
         return self.role == self.Role.FIELD_OFFICER
+
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+
+@receiver(post_save, sender=User)
+def sync_user_role_to_group(sender, instance, created, **kwargs):
+    """
+    Ensures that whenever a User is created or updated, they are automatically
+    assigned to the Django auth.Group corresponding to their role.
+    """
+    if instance.role:
+        group_name = instance.get_role_display()
+        from django.contrib.auth.models import Group
+        try:
+            group = Group.objects.get(name=group_name)
+            if not instance.groups.filter(pk=group.pk).exists():
+                instance.groups.add(group)
+        except Exception:
+            pass

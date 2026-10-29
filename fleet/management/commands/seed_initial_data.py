@@ -25,7 +25,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE("================================================================="))
 
         # ---------------------------------------------------------------------
-        # 1. Seed RBAC Roles / Groups
+        # 1. Seed RBAC Roles / Groups & Permissions
         # ---------------------------------------------------------------------
         roles = [
             'Administrator',
@@ -44,6 +44,14 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"  [+] Created Group/Role: {role_name}"))
             else:
                 self.stdout.write(self.style.WARNING(f"  [*] Group/Role already exists: {role_name}"))
+
+        # Populate permissions from core_roles.json fixture
+        from django.core.management import call_command
+        try:
+            call_command('loaddata', 'users/fixtures/core_roles.json')
+            self.stdout.write(self.style.SUCCESS("  [+] Applied model permissions to all 8 RBAC groups from core_roles.json"))
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"  [*] Notice loading core_roles fixture: {e}"))
 
         # ---------------------------------------------------------------------
         # 2. Seed Default Superuser & Demo RBAC Staff Users
@@ -75,6 +83,9 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(
                     f"  [*] Superuser '{admin_username}' already exists. Ensured staff and admin role."
                 ))
+            admin_group = Group.objects.filter(name='Administrator').first()
+            if admin_group:
+                admin_user.groups.add(admin_group)
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"  [-] Error checking/creating superuser: {e}"))
 
@@ -114,6 +125,17 @@ class Command(BaseCommand):
             },
         ]
 
+        ROLE_TO_GROUP = {
+            User.Role.ADMINISTRATOR: 'Administrator',
+            User.Role.MANAGEMENT: 'Management',
+            User.Role.RENTAL_OFFICER: 'Rental Officer',
+            User.Role.OPERATIONS_OFFICER: 'Operations Officer',
+            User.Role.WORKSHOP_MANAGER: 'Workshop Manager',
+            User.Role.ACCOUNTANT: 'Accountant',
+            User.Role.STOREKEEPER: 'Storekeeper',
+            User.Role.FIELD_OFFICER: 'Field Officer',
+        }
+
         for udata in demo_users:
             u, created = User.objects.get_or_create(
                 username=udata['username'],
@@ -133,6 +155,21 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"  [+] Created Demo User: '{u.username}' ({u.get_role_display()})"))
             else:
                 self.stdout.write(self.style.WARNING(f"  [*] Demo User already exists: '{u.username}'"))
+
+            # Assign matching RBAC group
+            group_name = ROLE_TO_GROUP.get(u.role)
+            if group_name:
+                grp = Group.objects.filter(name=group_name).first()
+                if grp:
+                    u.groups.add(grp)
+
+        # Ensure all existing users in the system have their corresponding RBAC group assigned
+        for user in User.objects.all():
+            grp_name = ROLE_TO_GROUP.get(user.role)
+            if grp_name:
+                grp = Group.objects.filter(name=grp_name).first()
+                if grp and not user.groups.filter(pk=grp.pk).exists():
+                    user.groups.add(grp)
 
         # ---------------------------------------------------------------------
         # 3. Seed Equipment Categories
@@ -324,5 +361,5 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"      [*] Updated Rate Card: Rs. {rate.daily_rate}/day"))
 
         self.stdout.write(self.style.NOTICE("================================================================="))
-        self.stdout.write(self.style.SUCCESS("✓ All Initial Database Entities & Fleet Data Seeded Successfully!"))
+        self.stdout.write(self.style.SUCCESS("[SUCCESS] All Initial Database Entities & Fleet Data Seeded Successfully!"))
         self.stdout.write(self.style.NOTICE("================================================================="))

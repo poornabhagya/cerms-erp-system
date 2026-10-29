@@ -224,3 +224,46 @@ class CoreRolesFixtureTests(TestCase):
         self.assertFalse(user.has_perm('rentals.change_rentalcontract'))
         self.assertFalse(user.has_perm('finance.add_invoice'))
 
+    def test_user_post_save_auto_assigns_role_group(self):
+        """Verify that saving a user with a role automatically syncs them to their auth.Group."""
+        user = User.objects.create_user(
+            username='auto_sync_user',
+            email='autosync@test.com',
+            password='password123',
+            role=User.Role.RENTAL_OFFICER
+        )
+        self.assertTrue(user.groups.filter(name='Rental Officer').exists())
+
+        # Change role to Accountant
+        user.role = User.Role.ACCOUNTANT
+        user.save()
+        self.assertTrue(user.groups.filter(name='Accountant').exists())
+
+    def test_seed_initial_data_populates_groups_and_assigns_users(self):
+        """Verify seed_initial_data command populates all 8 group permissions and links demo users."""
+        from django.core.management import call_command
+        from django.contrib.auth.models import Group
+
+        call_command('seed_initial_data')
+
+        for role_name in [
+            'Administrator', 'Management', 'Rental Officer', 'Operations Officer',
+            'Workshop Manager', 'Accountant', 'Storekeeper', 'Field Officer'
+        ]:
+            grp = Group.objects.get(name=role_name)
+            self.assertTrue(grp.permissions.exists(), f"Group {role_name} has no permissions after seed!")
+
+        # Verify demo users are in their matching groups
+        rental_user = User.objects.get(username='rental_officer')
+        self.assertTrue(rental_user.groups.filter(name='Rental Officer').exists())
+
+        accountant_user = User.objects.get(username='accountant')
+        self.assertTrue(accountant_user.groups.filter(name='Accountant').exists())
+
+        wm_user = User.objects.get(username='workshop_mgr')
+        self.assertTrue(wm_user.groups.filter(name='Workshop Manager').exists())
+
+        field_user = User.objects.get(username='field_officer')
+        self.assertTrue(field_user.groups.filter(name='Field Officer').exists())
+
+
