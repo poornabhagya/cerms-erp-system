@@ -16,7 +16,7 @@ class InvoiceAdmin(admin.ModelAdmin):
     )
     list_filter = ('status', 'invoice_date', 'due_date')
     search_fields = ('invoice_no', 'customer__company_name', 'contract__contract_no')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-invoice_date', '-created_at')
 
 
@@ -31,10 +31,11 @@ class PaymentAdmin(admin.ModelAdmin):
         'payment_type',
         'payment_method',
         'reference_number',
+        'created_by',
     )
     list_filter = ('payment_type', 'payment_method', 'payment_date')
     search_fields = ('payment_id', 'customer__company_name', 'reference_number', 'invoice__invoice_no')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-payment_date', '-created_at')
 
 
@@ -49,8 +50,9 @@ class SecurityDepositAdmin(admin.ModelAdmin):
         'deducted_amount',
         'refunded_amount',
         'status',
+        'created_by',
     )
     list_filter = ('status', 'received_date')
     search_fields = ('deposit_id', 'contract__contract_no', 'customer__company_name')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-created_at',)

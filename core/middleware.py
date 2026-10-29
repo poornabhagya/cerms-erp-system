@@ -71,3 +71,4 @@ class CurrentUserMiddleware:
                 _current_user.reset(token)
             else:
                 _current_user.set(None)
+

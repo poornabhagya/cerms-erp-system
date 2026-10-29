@@ -21,9 +21,10 @@ class RentalRateInline(admin.TabularInline):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code', 'created_at', 'updated_at')
+    list_display = ('name', 'code', 'created_by', 'created_at', 'updated_at')
     search_fields = ('name', 'code')
     prepopulated_fields = {'code': ('name',)}
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
 
 
 @admin.register(Equipment)
@@ -37,11 +38,12 @@ class EquipmentAdmin(admin.ModelAdmin):
         'current_hour_meter',
         'status',
         'purchase_cost',
+        'created_by',
     )
     list_filter = ('category', 'status', 'brand', 'manufacture_year')
     search_fields = ('asset_code', 'equipment_name', 'serial_number', 'brand', 'model_number')
     inlines = [RentalRateInline]
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
 
 
 @admin.register(RentalRate)
@@ -54,6 +56,8 @@ class RentalRateAdmin(admin.ModelAdmin):
         'monthly_rate',
         'is_active',
         'effective_from',
+        'created_by',
     )
     list_filter = ('is_active', 'effective_from')
     search_fields = ('equipment__asset_code', 'equipment__equipment_name')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')

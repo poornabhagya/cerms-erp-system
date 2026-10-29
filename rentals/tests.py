@@ -2824,6 +2824,13 @@ class SeedDummyDataCommandTests(TestCase):
         self.assertEqual(Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-').count(), 50)
         self.assertEqual(RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-').count(), 20)
 
+        # 6. Verify created_by audit field population on seeded entities
+        self.assertEqual(Customer.objects.filter(customer_code__startswith='CUST-DUMMY-', created_by__isnull=True).count(), 0)
+        self.assertEqual(Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-', created_by__isnull=True).count(), 0)
+        self.assertEqual(RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-', created_by__isnull=True).count(), 0)
+        self.assertEqual(Invoice.objects.filter(invoice_no__startswith='INV-DUMMY-', created_by__isnull=True).count(), 0)
+        self.assertEqual(DispatchReturn.objects.filter(transaction_id__startswith='TRX-DUMMY-', created_by__isnull=True).count(), 0)
+
 
 class AutomatedReturnToInvoiceTriggerTestCase(TestCase):
     """

@@ -38,6 +38,12 @@ class SeedInitialDataCommandTests(TestCase):
         cat_exc = Equipment.objects.get(asset_code='EQ-CAT-320-001')
         self.assertEqual(cat_exc.rental_rates.filter(is_active=True).count(), 1)
 
+        # Check created_by audit field is populated on seeded entities
+        self.assertIsNotNone(cat_exc.created_by)
+        self.assertEqual(Equipment.objects.filter(created_by__isnull=True).count(), 0)
+        self.assertEqual(Category.objects.filter(created_by__isnull=True).count(), 0)
+        self.assertEqual(RentalRate.objects.filter(created_by__isnull=True).count(), 0)
+
         # Verify idempotency by calling a second time
         call_command('seed_initial_data')
         self.assertEqual(Group.objects.count(), 8)

@@ -23,6 +23,7 @@ from rentals.models import (
     DispatchReturn,
 )
 from finance.models import Invoice, Payment, SecurityDeposit
+from core.middleware import set_audit_user
 
 User = get_user_model()
 
@@ -123,7 +124,7 @@ class Command(BaseCommand):
         for code, name, desc in categories_def:
             cat, _ = Category.objects.get_or_create(
                 code=code,
-                defaults={'name': name, 'description': desc}
+                defaults={'name': name, 'description': desc, 'created_by': admin_user}
             )
             categories[code] = cat
         self.stdout.write(self.style.SUCCESS(f"  [+] Categories verified ({len(categories)} categories ready)."))
@@ -174,6 +175,7 @@ class Command(BaseCommand):
                     'vat_tax_number': c_vat,
                     'credit_limit': c_limit,
                     'status': Customer.Status.ACTIVE,
+                    'created_by': rental_officer,
                 }
             )
             seeded_customers.append(customer)
@@ -195,6 +197,7 @@ class Command(BaseCommand):
                         'site_contact_person': f"{c_person} (Site Rep)",
                         'site_contact_phone': c_phone,
                         'status': ProjectSite.Status.ACTIVE,
+                        'created_by': rental_officer,
                     }
                 )
                 seeded_sites.append(site)
@@ -322,6 +325,7 @@ class Command(BaseCommand):
                     'specifications': specs,
                     'has_minor_damage': has_damage,
                     'minor_damage_notes': damage_notes,
+                    'created_by': workshop_mgr,
                 }
             )
             seeded_equipment.append(eq)
@@ -342,6 +346,7 @@ class Command(BaseCommand):
                     'overtime_hourly_rate': ot_rate,
                     'minimum_rental_hours': 8,
                     'effective_from': date(2026, 1, 1),
+                    'created_by': rental_officer,
                 }
             )
 
@@ -433,6 +438,7 @@ class Command(BaseCommand):
                     'status': Quotation.Status.CONVERTED,
                     'approved_by': admin_user,
                     'approval_date': timezone.now() - timedelta(days=40),
+                    'created_by': rental_officer,
                 }
             )
 
@@ -446,6 +452,7 @@ class Command(BaseCommand):
                     'rate_type': Quotation.RateType.DAILY,
                     'rate_applied': daily_rate,
                     'subtotal_amount': line_subtotal,
+                    'created_by': rental_officer,
                 }
             )
 
@@ -463,6 +470,7 @@ class Command(BaseCommand):
                     'agreed_rate': daily_rate,
                     'deposit_paid': deposit_req if deposit_status != SecurityDeposit.Status.PENDING else Decimal("0.00"),
                     'status': c_status,
+                    'created_by': rental_officer,
                 }
             )
             seeded_contracts.append(contract)
@@ -477,6 +485,7 @@ class Command(BaseCommand):
                     'rate_applied': daily_rate,
                     'rate_type': Quotation.RateType.DAILY,
                     'subtotal_amount': line_subtotal,
+                    'created_by': rental_officer,
                 }
             )
 
@@ -502,6 +511,7 @@ class Command(BaseCommand):
                     'refunded_amount': deposit_req if deposit_status == SecurityDeposit.Status.REFUNDED else Decimal("0.00"),
                     'deducted_amount': Decimal("0.00"),
                     'status': deposit_status,
+                    'created_by': accountant,
                 }
             )
 
@@ -553,6 +563,7 @@ class Command(BaseCommand):
                         } if ret_dt else {},
                         'damage_reported': False,
                         'excess_hours_calculated': Decimal("0.00"),
+                        'created_by': workshop_mgr,
                     }
                 )
 
@@ -579,6 +590,7 @@ class Command(BaseCommand):
                         'net_total_payable': grand_total,
                         'paid_amount': grand_total,
                         'status': Invoice.Status.PAID,
+                        'created_by': accountant,
                     }
                 )
 
@@ -594,6 +606,7 @@ class Command(BaseCommand):
                         'reference_number': f"TXN-SLIP-{c_idx:04d}-BOC",
                         'recorded_by': accountant,
                         'notes': f"Full settlement for contract {contract.contract_no}",
+                        'created_by': accountant,
                     }
                 )
 
@@ -635,6 +648,7 @@ class Command(BaseCommand):
                     'status': s_status,
                     'approved_by': admin_user if s_status == Quotation.Status.APPROVED_BY_MANAGEMENT else None,
                     'approval_date': timezone.now() if s_status == Quotation.Status.APPROVED_BY_MANAGEMENT else None,
+                    'created_by': rental_officer,
                 }
             )
 
@@ -647,8 +661,13 @@ class Command(BaseCommand):
                     'rate_type': Quotation.RateType.DAILY,
                     'rate_applied': d_rate,
                     'subtotal_amount': subtot,
+                    'created_by': rental_officer,
                 }
             )
+
+        # 10. Backfill created_by for Complete Auditability
+        for model in [Category, Equipment, RentalRate, Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn, Invoice, Payment, SecurityDeposit]:
+            model.objects.filter(created_by__isnull=True).update(created_by=admin_user)
 
         self.stdout.write(self.style.SUCCESS(
             f"  [+] Seeded {len(seeded_contracts)} Rental Contracts across all lifecycle stages (5 Closed, 8 On-Rent, 3 Dispatched, 4 Active)."

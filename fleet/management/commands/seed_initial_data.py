@@ -12,6 +12,7 @@ from django.contrib.auth.models import Group
 from django.utils import timezone
 
 from fleet.models import Category, Equipment, RentalRate
+from core.middleware import set_audit_user
 
 User = get_user_model()
 
@@ -204,7 +205,8 @@ class Command(BaseCommand):
                 code=cdata['code'],
                 defaults={
                     'name': cdata['name'],
-                    'description': cdata['description']
+                    'description': cdata['description'],
+                    'created_by': admin_user,
                 }
             )
             categories_map[cdata['code']] = cat
@@ -332,6 +334,7 @@ class Command(BaseCommand):
 
         for eq_item in equipment_data:
             rate_info = eq_item.pop('rate')
+            eq_item['created_by'] = admin_user
             eq, created = Equipment.objects.update_or_create(
                 asset_code=eq_item['asset_code'],
                 defaults=eq_item
@@ -353,12 +356,44 @@ class Command(BaseCommand):
                     'overtime_hourly_rate': rate_info['overtime_hourly_rate'],
                     'minimum_rental_hours': rate_info['minimum_rental_hours'],
                     'effective_from': timezone.now().date(),
+                    'created_by': admin_user,
                 }
             )
             if r_created:
                 self.stdout.write(self.style.SUCCESS(f"      [+] Attached Rate Card: Rs. {rate.daily_rate}/day"))
             else:
                 self.stdout.write(self.style.WARNING(f"      [*] Updated Rate Card: Rs. {rate.daily_rate}/day"))
+
+        # ---------------------------------------------------------------------
+        # 5. Backfill created_by on any existing records missing audit info
+        # ---------------------------------------------------------------------
+        self.stdout.write(self.style.NOTICE("\n--- Backfilling created_by for Complete Auditability ---"))
+        for model in [Category, Equipment, RentalRate]:
+            count = model.objects.filter(created_by__isnull=True).update(created_by=admin_user)
+            if count:
+                self.stdout.write(self.style.SUCCESS(f"  [+] Backfilled created_by for {count} {model.__name__} records."))
+
+        try:
+            from rentals.models import Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn
+            for model in [Customer, ProjectSite, Quotation, QuotationItem, RentalContract, RentalContractItem, DispatchReturn]:
+                count = model.objects.filter(created_by__isnull=True).update(created_by=admin_user)
+                if count:
+                    self.stdout.write(self.style.SUCCESS(f"  [+] Backfilled created_by for {count} {model.__name__} records."))
+        except Exception:
+            pass
+
+        try:
+            from finance.models import Invoice, Payment, SecurityDeposit
+            for model in [Invoice, Payment, SecurityDeposit]:
+                count = model.objects.filter(created_by__isnull=True).update(created_by=admin_user)
+                if count:
+                    self.stdout.write(self.style.SUCCESS(f"  [+] Backfilled created_by for {count} {model.__name__} records."))
+        except Exception:
+            pass
+
+        user_count = User.objects.filter(created_by__isnull=True).exclude(pk=admin_user.pk).update(created_by=admin_user)
+        if user_count:
+            self.stdout.write(self.style.SUCCESS(f"  [+] Backfilled created_by for {user_count} User records."))
 
         self.stdout.write(self.style.NOTICE("================================================================="))
         self.stdout.write(self.style.SUCCESS("[SUCCESS] All Initial Database Entities & Fleet Data Seeded Successfully!"))

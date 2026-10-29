@@ -29,7 +29,9 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+        (_('Audit Information'), {'fields': ('created_by', 'created_at', 'updated_at')}),
     )
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)

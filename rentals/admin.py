@@ -59,7 +59,11 @@ class CustomerAdmin(admin.ModelAdmin):
         ('Credit & Financial Standing', {
             'fields': ('credit_limit', 'current_outstanding_balance')
         }),
+        ('Audit Information', {
+            'fields': ('created_by', 'created_at', 'updated_at')
+        }),
     )
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
 
 
 @admin.register(ProjectSite)
@@ -71,11 +75,13 @@ class ProjectSiteAdmin(admin.ModelAdmin):
         'site_contact_person',
         'site_contact_phone',
         'status',
+        'created_by',
         'created_at'
     )
     list_filter = ('status', 'created_at')
     search_fields = ('project_code', 'project_name', 'customer__company_name', 'site_contact_person', 'site_contact_phone')
     raw_id_fields = ('customer',)
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('project_name',)
 
 
@@ -90,12 +96,14 @@ class QuotationAdmin(admin.ModelAdmin):
         'grand_total_amount',
         'status',
         'approved_by',
+        'created_by',
         'created_at'
     )
     list_filter = ('status', 'rate_type', 'created_at')
     search_fields = ('quotation_no', 'customer__company_name', 'items__equipment__asset_code', 'items__equipment__equipment_name')
     raw_id_fields = ('customer', 'project_site', 'approved_by')
     inlines = [QuotationItemInline]
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-created_at',)
 
 
@@ -110,12 +118,14 @@ class RentalContractAdmin(admin.ModelAdmin):
         'contract_end_date',
         'billing_cycle',
         'status',
+        'created_by',
         'created_at'
     )
     list_filter = ('status', 'billing_cycle', 'created_at')
     search_fields = ('contract_no', 'customer__company_name', 'equipment__asset_code', 'quotation__quotation_no')
     raw_id_fields = ('quotation', 'customer', 'project_site', 'equipment')
     inlines = [RentalContractItemInline, DispatchReturnInline]
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-contract_start_date',)
 
 
@@ -130,9 +140,11 @@ class DispatchReturnAdmin(admin.ModelAdmin):
         'return_datetime',
         'return_hour_meter',
         'damage_reported',
-        'excess_hours_calculated'
+        'excess_hours_calculated',
+        'created_by'
     )
     list_filter = ('damage_reported', 'dispatch_datetime', 'return_datetime')
     search_fields = ('transaction_id', 'contract__contract_no', 'equipment__asset_code')
     raw_id_fields = ('contract', 'equipment', 'dispatch_officer', 'return_officer')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
     ordering = ('-dispatch_datetime',)
