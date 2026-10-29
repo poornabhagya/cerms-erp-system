@@ -23,8 +23,8 @@ def auto_trigger_return_to_invoice(sender, instance, created, **kwargs):
     automatically calculate finalized charges (including excess hours and damages)
     and generate the commercial Tax Invoice.
     """
-    # Bypass signal if explicitly handled by service layer (which carries damage_charges) or dummy seeding
-    if getattr(instance, '_skip_return_invoice_signal', False) or (instance.transaction_id and instance.transaction_id.startswith('TRX-DUMMY-')):
+    # Bypass signal if explicitly handled by service layer (which carries damage_charges)
+    if getattr(instance, '_skip_return_invoice_signal', False):
         return
 
     # Only proceed if return has been officially recorded
