@@ -2758,6 +2758,73 @@ class DoubleBookingPreventionAndConflictTestCase(TestCase):
         self.assertTrue(any('already booked or reserved' in m for m in messages_accept))
 
 
+class SeedDummyDataCommandTests(TestCase):
+    """Automated test suite for the seed_dummy_data management command."""
+
+    def test_production_safety_check_blocks_execution_without_force(self):
+        """Verify command raises CommandError when DEBUG is False and --force is omitted."""
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+
+        with override_settings(DEBUG=False):
+            with self.assertRaises(CommandError) as ctx:
+                call_command('seed_dummy_data')
+            self.assertIn("CRITICAL", str(ctx.exception))
+
+    def test_seed_dummy_data_populates_required_entities(self):
+        """Verify command generates 10 customers, 50 equipment assets, and 20 rental contracts."""
+        from django.core.management import call_command
+        from rentals.models import Customer, ProjectSite, Quotation, RentalContract, DispatchReturn
+        from fleet.models import Equipment, RentalRate
+        from finance.models import Invoice, Payment, SecurityDeposit
+
+        call_command('seed_dummy_data', force=True)
+
+        # 1. Customers and Project Sites
+        dummy_customers = Customer.objects.filter(customer_code__startswith='CUST-DUMMY-')
+        self.assertEqual(dummy_customers.count(), 10)
+        self.assertTrue(ProjectSite.objects.filter(project_code__startswith='PRJ-DUMMY-').count() >= 10)
+
+        # 2. Equipment Assets & Rate Cards
+        dummy_equipment = Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-')
+        self.assertEqual(dummy_equipment.count(), 50)
+        for eq in dummy_equipment:
+            self.assertTrue(
+                RentalRate.objects.filter(equipment=eq, is_active=True).exists(),
+                f"Equipment {eq.asset_code} has no active rate card!"
+            )
+        # Check minor damage flags
+        self.assertTrue(dummy_equipment.filter(has_minor_damage=True).exists())
+
+        # 3. Rental Contracts & Lifecycle Distribution
+        dummy_contracts = RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-')
+        self.assertEqual(dummy_contracts.count(), 20)
+
+        closed_cnt = dummy_contracts.filter(status=RentalContract.Status.CLOSED).count()
+        on_rent_cnt = dummy_contracts.filter(status=RentalContract.Status.ON_RENT).count()
+        dispatched_cnt = dummy_contracts.filter(status=RentalContract.Status.DISPATCHED).count()
+        active_cnt = dummy_contracts.filter(status=RentalContract.Status.ACTIVE).count()
+
+        self.assertEqual(closed_cnt, 5)
+        self.assertEqual(on_rent_cnt, 8)
+        self.assertEqual(dispatched_cnt, 3)
+        self.assertEqual(active_cnt, 4)
+
+        # 4. Associated Financial & Logistics Documents
+        self.assertEqual(Invoice.objects.filter(invoice_no__startswith='INV-DUMMY-').count(), 5)
+        self.assertEqual(Payment.objects.filter(payment_id__startswith='PAY-DUMMY-').count(), 5)
+        self.assertEqual(SecurityDeposit.objects.filter(deposit_id__startswith='DEP-DUMMY-').count(), 20)
+        self.assertEqual(DispatchReturn.objects.filter(transaction_id__startswith='TRX-DUMMY-').count(), 16)
+
+        # 5. Test --clear flag idempotency
+        call_command('seed_dummy_data', clear=True, force=True)
+        self.assertEqual(Customer.objects.filter(customer_code__startswith='CUST-DUMMY-').count(), 10)
+        self.assertEqual(Equipment.objects.filter(asset_code__startswith='EQ-DUMMY-').count(), 50)
+        self.assertEqual(RentalContract.objects.filter(contract_no__startswith='CNT-DUMMY-').count(), 20)
+
+
+
 
 
 
