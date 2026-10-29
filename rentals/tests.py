@@ -2902,8 +2902,8 @@ class AutomatedReturnToInvoiceTriggerTestCase(TestCase):
             is_active=True
         )
 
-        # 5-day rental: standard allowance = 5 * 8 = 40 hours
-        self.start_date = timezone.now().date() - timedelta(days=5)
+        # 5-day rental (start to end inclusive = 5 days): standard allowance = 5 * 8 = 40 hours
+        self.start_date = timezone.now().date() - timedelta(days=4)
         self.end_date = timezone.now().date()
 
         self.quotation = Quotation.objects.create(
