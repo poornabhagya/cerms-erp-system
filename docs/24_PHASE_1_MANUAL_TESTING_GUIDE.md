@@ -1,32 +1,60 @@
 # 24_PHASE_1_MANUAL_TESTING_GUIDE
 
 ## Construction Equipment Rental Management System (CERMS)
-### Phase 1 End-to-End Manual UI Testing (ClickOps) & Business Logic Verification Guide
+### Phase 1 End-to-End Manual UI Testing (ClickOps), Business Logic & Verification Guide
 
 ---
 
-## 1. Document Overview & Objective
+## 1. Document Overview & Testing Objectives
 
 This document provides a comprehensive, sequential, click-by-click Manual User Interface (ClickOps) Testing Guide for **Phase 1** of the CERMS platform. 
 
-It is designed for Quality Assurance (QA) engineers, Product Managers, Operations Leads, and Developers to validate:
-1. **Data Integrity & Relational Workflows:** End-to-end operational sequence from fleet master provisioning to quotation, contract, dispatch, return, and financial reconciliation.
-2. **Role-Based Access Control (RBAC):** Verification of permissions, UI element visibility, and view protections across 8 distinct user roles.
-3. **Business Logic & State Machine Transitions:** Validation of asset lifecycle transitions, quotation approval gates, credit ceiling verifications, logistics handovers, and escrow deposit deductions.
-4. **Financial Calculations & Pricing Engine:** Accurate arithmetic verification of multi-tier tariffs, overtime hour penalties, Sri Lankan statutory VAT (18%), escrow deposits, and automated invoice PDF generation via WeasyPrint.
+It is designed for Quality Assurance (QA) engineers, Product Managers, Operations Leads, Accountants, and Developers to validate:
+1. **End-to-End Operational Lifecycle:** Complete commercial sequence from fleet master provisioning, customer onboarding, multi-asset quoting, managerial approvals, and contract conversion to physical yard dispatch, return inspection, automated invoicing, payment settlement, and escrow deposit release.
+2. **Role-Based Access Control (RBAC):** Verification of permissions, menu visibility, and view protections across all 8 distinct system roles in both the Web UI and the Django Admin panel.
+3. **Double-Booking & Conflict Prevention Engine:** Validation that machinery assigned to active contracts, multi-asset contract items, or accepted/approved quotations cannot be reserved or double-booked for overlapping date intervals.
+4. **Maintenance & Breakdown Soft Warnings:** Verification that assets under repair are not hard-blocked from forward quotations (for future dates), but display prominent managerial warnings to ensure repair timelines are verified prior to contract conversion.
+5. **Physical Logistics Inspection & Bifurcated Damage Routing:** Handover certification with opening/closing hour meters, fuel percentage levels, and decoupled damage routing (minor cosmetic defects vs. grounding workshop maintenance).
+6. **Automated Return-to-Invoice Trigger:** Automatic calculation and tax invoice generation upon return inspection check-in without requiring manual intervention from accounting staff.
+7. **Financial Engine & Sri Lankan Statutory VAT:** High-precision arithmetic verification of daily/weekly/monthly rate cards, excess operating overtime penalties, mobilization transport fees, 18% VAT, and security deposit deductions.
+8. **Automated WeasyPrint Document Generation:** Pixel-perfect A4 PDF generation for Quotations, Binding Rental Contracts, and Commercial Tax Invoices.
+9. **Interactive FullCalendar Scheduling Grid:** Timeline, month, and week views reflecting live fleet statuses, color-coded event bars, conflict modal checks, and direct REST API integrations.
+10. **System Auditability & Timestamping:** Verification that `TimeStampedModel` attributes (`created_at`, `updated_at`, and `created_by`) automatically record the authoring user across all modules.
 
 ---
 
-## 2. Seed Data & Test Accounts Matrix
+## 2. Test Environments, Accounts & Data Seeding
 
-The system comes pre-configured with default seed accounts created via `python manage.py seed_initial_data` or standard fixtures.
+### 2.1 Test Environments
+* **Staging Server:** `http://43.204.149.39/` (Production-mirrored MariaDB 10.11 & NGINX)
+* **Local Development:** `http://127.0.0.1:8000/`
 
-### 2.1 Default Staff Test Accounts
+---
+
+### 2.2 Database Seeding Commands
+
+QA testers can quickly set up fresh test data using Django management commands:
+
+1. **Baseline Initial Seeder:**
+   ```bash
+   python manage.py seed_initial_data
+   ```
+   *Creates the 8 core RBAC groups, default superuser, 4 demo staff accounts, 6 equipment categories, base fleet assets, and rate cards.*
+
+2. **Realistic Scale Seeder (Recommended for Comprehensive QA):**
+   ```bash
+   python manage.py seed_dummy_data
+   ```
+   *Creates 10 realistic corporate construction customers, 10 project sites, 50 equipment assets across multiple categories, 50 rental rate cards, and 20 rental contracts across different lifecycle statuses (`ACTIVE`, `ON_RENT`, `RETURNED`, `CLOSED`) with linked dispatch/return logs, security deposits, and tax invoices.*
+
+---
+
+### 2.3 Default Staff Test Accounts Matrix
 
 | Username | Password | Organizational Role | Core System Responsibilities & Permissions |
 | :--- | :--- | :--- | :--- |
 | `admin` | `Admin@CERMS2026!` | **Administrator** | **Full System Superuser.** Access to all Web UI views, Django Admin (`/admin/`), user creation, role assignment, and system configuration. |
-| `mgmt_user` / `admin` | `Admin@CERMS2026!` | **Management** | **Executive Oversight & Approval Authority.** View dashboards, financial reports, high-exposure credit overrides, and quotation approval transitions. |
+| `management` | `Staff@CERMS2026!` | **Management** | **Executive Oversight & Approval Authority.** View dashboards, financial reports, high-exposure credit overrides, and quotation approval transitions. |
 | `rental_officer` | `Staff@CERMS2026!` | **Rental Officer** | **Customer & Commercial Operations.** Full CRU on Customers, Project Sites, Quotations, Rental Contracts, and Availability Calendar. |
 | `ops_officer` | `Staff@CERMS2026!` | **Operations Officer** | **Fleet Logistics & Site Movements.** Full CRU on Equipment Dispatch, Return Handover inspections, checklist logs, and hour-meter audits. |
 | `workshop_mgr` | `Staff@CERMS2026!` | **Workshop Manager** | **Maintenance & Fleet Health.** Full access to Equipment status overrides (`MAINTENANCE`, `BREAKDOWN`, `AVAILABLE`), inspection reports, and workshop job cards. |
@@ -36,48 +64,54 @@ The system comes pre-configured with default seed accounts created via `python m
 
 ---
 
-### 2.2 Role-Based Access Control (RBAC) Permission Matrix
+### 2.4 Role-Based Access Control (RBAC) Permission Matrix
 
 | Module / Action | Target URL Route | Admin | Management | Rental Officer | Operations Officer | Workshop Manager | Accountant | Field Officer | Storekeeper |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Django Admin Panel** | `/admin/` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Fleet Master CRUD** | `/fleet/equipment/` | ✅ | 👁️ (Read) | 👁️ (Read) | 👁️ (Read) | ✅ | 👁️ (Read) | 👁️ (Read) | 👁️ (Read) |
-| **Rate Card Management** | `/fleet/equipment/<code\>/rates/` | ✅ | ✅ | ✅ | ❌ | ❌ | 👁️ (Read) | ❌ | ❌ |
+| **Rate Card Management** | `/fleet/equipment/<code\>/` | ✅ | ✅ | ✅ | ❌ | ❌ | 👁️ (Read) | ❌ | ❌ |
 | **Customer Master CRUD** | `/rentals/customers/` | ✅ | 👁️ (Read) | ✅ | 👁️ (Read) | ❌ | ✅ | ❌ | ❌ |
 | **Quotation Creation** | `/rentals/quotations/create/` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Quotation Management Approval** | `/rentals/quotations/<no\>/transition/` | ✅ | ✅ | ❌ (Cannot Approve Self) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Quotation Approval** | `/rentals/quotations/<no\>/transition/` | ✅ | ✅ | ❌ (Cannot Approve Self) | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Contract Conversion** | `/rentals/quotations/<no\>/` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Equipment Dispatch** | `/rentals/contracts/<no\>/dispatch/` | ✅ | 👁️ (Read) | 👁️ (Read) | ✅ | ❌ | ❌ | ✅ | ❌ |
 | **Equipment Return** | `/rentals/returns/<id\>/` | ✅ | 👁️ (Read) | 👁️ (Read) | ✅ | ❌ | ❌ | ✅ | ❌ |
 | **Availability Calendar** | `/rentals/availability-calendar/` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Invoice Generation & PDF** | `/finance/invoices/` | ✅ | ✅ | 👁️ (Read) | ❌ | ❌ | ✅ | ❌ | ❌ |
-| **Payment Settlement** | `/finance/invoices/<no\>/` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **Final Invoice Trigger** | Auto on Return / Contract view | ✅ | ✅ | 👁️ (Read) | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **Payment Settlement** | `/finance/invoices/<no\>/pay/` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | **Security Deposit Ledger** | `/finance/deposits/` | ✅ | ✅ | 👁️ (Read) | ❌ | ❌ | ✅ | ❌ | ❌ |
+| **WeasyPrint PDF Exports** | `.../pdf/` routes | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-*Legend: ✅ = Full Access (Create, Read, Update) | 👁️ = Read-Only View | ❌ = HTTP 403 Forbidden / Access Denied*
+*Legend: ✅ = Full Access (Create, Read, Update) | 👁️ = Read-Only Access | ❌ = HTTP 403 Forbidden / Access Denied*
 
 ---
 
-## 3. Strict Sequential Execution Order
+## 3. Strict Sequential Execution Flowchart
 
-To prevent foreign key dependency errors, manual testing must proceed in the following strict order:
+To prevent relational dependency errors, manual testing must proceed in the following order:
 
 ```mermaid
 flowchart TD
-    S1[Step 1: Auth & RBAC Verification] --> S2[Step 2: Fleet Category Setup]
-    S2 --> S3[Step 3: Equipment Asset Master Registration]
-    S3 --> S4[Step 4: Rental Tariff Card Configuration]
-    S4 --> S5[Step 5: Customer Master & Credit Limits]
-    S5 --> S6[Step 6: Project Site Registration]
-    S6 --> S7[Step 7: Quotation Creation & Math Engine]
-    S7 --> S8[Step 8: Management Approval & Contract Conversion]
-    S8 --> S9[Step 9: Availability Calendar & Scheduling Grid]
-    S9 --> S10[Step 10: Equipment Dispatch Handover]
-    S10 --> S11[Step 11: Return Inspection & Hour Meter Reconciliation]
-    S11 --> S12[Step 12: Final Invoicing & WeasyPrint PDF Generation]
-    S12 --> S13[Step 13: Payment Recording & Balance Update]
-    S13 --> S14[Step 14: Escrow Security Deposit Lifecycle]
-    S14 --> S15[Step 15: Document Export Audit (Quotation, Contract, Invoice)]
+    S1[Step 1: Auth, Session & RBAC Enforcement] --> S2[Step 2: REST API & JWT Token Auth]
+    S2 --> S3[Step 3: Fleet Category Setup]
+    S3 --> S4[Step 4: Equipment Asset Master Registration]
+    S4 --> S5[Step 5: Rental Tariff Card Configuration]
+    S5 --> S6[Step 6: Customer Master & Credit Limits]
+    S6 --> S7[Step 7: Project Site Registration]
+    S7 --> S8[Step 8: Multi-Asset Quotation & Pricing Engine]
+    S8 --> S9[Step 9: Edge Cases: Credit Limits & Maintenance Warnings]
+    S9 --> S10[Step 10: Managerial Approval & Contract Conversion]
+    S10 --> S11[Step 11: Negative Test: Conflict & Double-Booking Prevention]
+    S11 --> S12[Step 12: Availability Calendar & Scheduling Grid]
+    S12 --> S13[Step 13: Equipment Dispatch Handover & Checklist]
+    S13 --> S14[Step 14: Return Inspection & Bifurcated Damage Routing]
+    S14 --> S15[Step 15: Automated Return-to-Invoice Trigger]
+    S15 --> S16[Step 16: Interim / Ad-hoc Contract Billing Flow]
+    S16 --> S17[Step 17: Payment Recording & Ledger Reconciliation]
+    S17 --> S18[Step 18: Escrow Security Deposit Lifecycle & Refund]
+    S18 --> S19[Step 19: WeasyPrint PDF Generation Audit]
+    S19 --> S20[Step 20: Audit Tracking Verification]
 ```
 
 ---
@@ -89,35 +123,73 @@ flowchart TD
 ### Step 1: Authentication, Session Management & RBAC Enforcement
 
 #### A. Feature Overview & Purpose
-Validates user authentication, role assignment, active session management, and URL-level permission enforcement (preventing unauthorized horizontal and vertical privilege escalation).
+Validates user authentication, role assignment, session management, and URL-level permission enforcement (preventing unauthorized horizontal and vertical privilege escalation) across Web UI and Django Admin.
 
 #### B. Step-by-Step UI Actions
-1. Open your browser and navigate to the application root: `http://127.0.0.1:8000/`.
+1. Open your browser and navigate to the application root: `http://127.0.0.1:8000/` (or staging `http://43.204.149.39/`).
 2. Verify that unauthenticated requests are automatically redirected to `/login/`.
 3. In the login form, enter invalid credentials (`invalid_user` / `wrongpass`) and click **Sign In**.
    - **Expected Result:** Flash error message: *"Invalid username or password."*
 4. Enter valid credentials for `rental_officer` (`Staff@CERMS2026!`) and click **Sign In**.
-   - **Expected Result:** Successful login, redirected to user profile/dashboard, and navbar displays username `rental_officer` with badge `Rental Officer`.
+   - **Expected Result:** Successful login, redirected to dashboard/profile, navbar displays username `rental_officer` with badge `Rental Officer`.
 5. While logged in as `rental_officer`, attempt to access restricted routes:
-   - Navigate to `http://127.0.0.1:8000/admin/`.
+   - Navigate to `/admin/`:
      - **Expected Result:** Redirected or prompted with superuser login (Regular staff cannot access Django Admin).
-   - Navigate to `http://127.0.0.1:8000/finance/invoices/create/` (or trigger settlement).
+   - Navigate to `/finance/invoices/INV-2026-0001/pay/`:
      - **Expected Result:** HTTP 403 Forbidden response or redirection with error message: *"You do not have permission to access this resource."*
 6. Click **Log Out** from the user profile dropdown.
    - **Expected Result:** Session destroyed, redirected back to `/login/`.
+7. Log in as `admin` (`Admin@CERMS2026!`).
+   - Navigate to `/admin/`:
+     - **Expected Result:** Django Admin panel opens cleanly showing all registered model groups (Users, Fleet, Rentals, Finance).
 
 ---
 
-### Step 2: Fleet Category Setup
+### Step 2: REST API Authentication & JWT Token Exchange (Mobile Field Flow)
 
 #### A. Feature Overview & Purpose
-Classifies construction machinery into operational asset categories (e.g., Earthmoving, Power Generation, Compaction, Lifting).
+Validates JSON Web Token (JWT) issuance and protected API endpoints intended for mobile field inspectors and yard officers.
+
+#### B. Step-by-Step API Actions (using cURL, Postman, or Browser Console)
+1. **Request JWT Access & Refresh Pair:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/v1/auth/token/ \
+     -H "Content-Type: application/json" \
+     -d '{"username": "field_officer", "password": "Staff@CERMS2026!"}'
+   ```
+   * **Expected Response (HTTP 200 OK):**
+     ```json
+     {
+       "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+       "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+     }
+     ```
+2. **Access Protected User Profile API:**
+   ```bash
+   curl -X GET http://127.0.0.1:8000/api/v1/auth/me/ \
+     -H "Authorization: Bearer <ACCESS_TOKEN>"
+   ```
+   * **Expected Response (HTTP 200 OK):** Returns profile JSON with `username: "field_officer"` and `role: "FIELD_OFFICER"`.
+3. **Verify Token Refresh:**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/v1/auth/token/refresh/ \
+     -H "Content-Type: application/json" \
+     -d '{"refresh": "<REFRESH_TOKEN>"}'
+   ```
+   * **Expected Response (HTTP 200 OK):** New valid `access` token returned.
+
+---
+
+### Step 3: Fleet Category Provisioning & Auto-Slug Generation
+
+#### A. Feature Overview & Purpose
+Classifies construction machinery into operational asset categories (e.g., Excavators, Compaction, Power Generation, Lifting) with unique slug codes.
 
 #### B. Step-by-Step UI Actions
-1. Log in as `admin` (`Admin@CERMS2026!`) or `workshop_mgr` (`Staff@CERMS2026!`).
-2. Navigate to **Fleet** > **Categories** (`/fleet/categories/` or via Django Admin `/admin/fleet/category/`).
-3. Click the **"+ New Category"** button.
-4. Fill in the following test form data:
+1. Log in as `workshop_mgr` (`Staff@CERMS2026!`) or `admin`.
+2. Navigate to **Fleet Master** > **Categories** (`/fleet/categories/`).
+3. Click **"+ New Category"** (`/fleet/categories/create/`).
+4. Fill in the category form:
    - **Category Name:** `Hydraulic Excavators`
    - **Category Code:** `EXC` (Slug/unique mnemonic)
    - **Description:** `Heavy crawler and wheeled hydraulic excavators ranging from 13T to 35T operating weight.`
@@ -129,16 +201,18 @@ Classifies construction machinery into operational asset categories (e.g., Earth
 
 ---
 
-### Step 3: Equipment Asset Master Registration
+### Step 4: Equipment Asset Master Registration & Auto Asset Code API
 
 #### A. Feature Overview & Purpose
 Registers physical machinery assets into the fleet database with serial tracking, initial hour meters, purchase costs, and initial state `AVAILABLE`.
 
 #### B. Step-by-Step UI Actions
 1. Log in as `workshop_mgr` or `admin`.
-2. Navigate to **Fleet** > **Equipment Master** (`/fleet/equipment/`).
-3. Click **"+ Add Equipment Asset"** (`/fleet/equipment/create/`).
-4. Fill in the asset specifications:
+2. Navigate to **Fleet Master** > **Equipment Master** (`/fleet/equipment/`).
+3. Click **"+ Register New Equipment"** (`/fleet/equipment/create/`).
+4. Select Category `Hydraulic Excavators (EXC)`.
+   - **Auto-Code Verification:** Observe the **Asset Code** input. Notice the hint or auto-generation indicator calling `/fleet/api/generate-asset-code/?category_code=EXC`, pre-filling `EQ-EXC-...`.
+5. Fill in the asset specifications:
    - **Asset Code:** `EQ-CAT-320-001`
    - **Equipment Name:** `Caterpillar 320D Hydraulic Excavator`
    - **Category:** Select `Hydraulic Excavators (EXC)`
@@ -154,7 +228,7 @@ Registers physical machinery assets into the fleet database with serial tracking
      ```json
      {"operating_weight": "21500 kg", "engine_power": "140 HP", "bucket_capacity": "1.0 m3"}
      ```
-5. Click **Save Equipment Record**.
+6. Click **Save Equipment Record**.
 
 #### C. State Machine & Expected Output
 - **State Machine:** Initial status set to `AVAILABLE` (Green Badge).
@@ -163,18 +237,18 @@ Registers physical machinery assets into the fleet database with serial tracking
 
 ---
 
-### Step 4: Rental Tariff Card Configuration
+### Step 5: Multi-Tier Rental Tariff Card Configuration
 
 #### A. Feature Overview & Purpose
 Defines standard pricing tiers (Daily, Weekly, Monthly), minimum hire periods, and overtime hourly rates for an asset.
 
 #### B. Step-by-Step UI Actions
-1. In the equipment dossier (`/fleet/equipment/EQ-CAT-320-001/`), click the **"Rental Rates"** tab or click **"+ Add Rate Card"**.
+1. In the equipment dossier (`/fleet/equipment/EQ-CAT-320-001/`), locate the **Rental Rate Cards** section or click **"+ Add Rate Card"**.
 2. Enter the pricing tariff details:
    - **Daily Rate (LKR):** `45,000.00` (Standard 8-hour single shift)
    - **Weekly Rate (LKR):** `280,000.00` (Discounted 7-day rate)
    - **Monthly Rate (LKR):** `1,100,000.00` (Discounted 30-day rate)
-   - **Overtime Hourly Rate (LKR/hr):** `6,500.00` (Rate charged for operating hours $> 8$ hrs/day)
+   - **Overtime Hourly Rate (LKR/hr):** `5,625.00` (Rate charged for operating hours $> 8$ hrs/day)
    - **Minimum Rental Hours:** `8`
    - **Effective From Date:** Today's Date
    - **Is Active Rate:** Checked (`True`)
@@ -185,17 +259,17 @@ Defines standard pricing tiers (Daily, Weekly, Monthly), minimum hire periods, a
 
 ---
 
-### Step 5: Customer Master & Credit Standing Management
+### Step 6: Customer Master & Credit Standing Management
 
 #### A. Feature Overview & Purpose
-Registers commercial B2B clients, sets credit limits, tracks outstanding debts, and enforces account operational standing (`ACTIVE`, `SUSPENDED`, `BLOCKED`).
+Registers commercial B2B clients, sets credit limits, tracks outstanding debts, and enforces account operational standing (`ACTIVE`, `BLOCKED`, `INACTIVE`).
 
 #### B. Step-by-Step UI Actions
 1. Log in as `rental_officer` (`Staff@CERMS2026!`).
-2. Navigate to **Rentals** > **Customers** (`/rentals/customers/`).
-3. Click **"+ New Customer"** (`/rentals/customers/create/`).
+2. Navigate to **Customers & Sites** > **Customers** (`/rentals/customers/`).
+3. Click **"+ Register New Customer"** (`/rentals/customers/create/`).
 4. Fill in the customer profile:
-   - **Customer Code:** `CUST-2026-001`
+   - **Customer Code:** Auto-generated sequence (e.g., `CUST-2026-001`)
    - **Company Name:** `Access Engineering PLC`
    - **Contact Person:** `Sunil Perera`
    - **Phone Number:** `+94771234567`
@@ -215,15 +289,15 @@ Registers commercial B2B clients, sets credit limits, tracks outstanding debts, 
 
 ---
 
-### Step 6: Project Site Registration
+### Step 7: Project Site Registration & GPS Mapping
 
 #### A. Feature Overview & Purpose
-Binds construction work locations and site contact supervisors to a specific customer account.
+Binds construction work locations, GPS coordinates, and site contact supervisors to a specific customer account.
 
 #### B. Step-by-Step UI Actions
-1. Navigate to **Rentals** > **Project Sites** (`/rentals/sites/`) or click **"+ Add Site"** inside `Access Engineering PLC` dossier.
+1. Navigate to **Customers & Sites** > **Project Sites** (`/rentals/sites/`) or click **"+ Add Site"** inside `Access Engineering PLC` dossier.
 2. Fill in the site details:
-   - **Project Code:** `PRJ-COL-001`
+   - **Project Code:** `PRJ-COL-001` (or auto-generated via `/rentals/api/generate-site-code/`)
    - **Customer:** Select `Access Engineering PLC (CUST-2026-001)`
    - **Project Name:** `Central Expressway Section III - Interchange`
    - **Site Address:** `Mirigama Interchange Site, Mirigama`
@@ -235,13 +309,13 @@ Binds construction work locations and site contact supervisors to a specific cus
 
 ---
 
-### Step 7: Commercial Quotation Creation & Multi-Tier Calculation Engine
+### Step 8: Multi-Asset Commercial Quotation Builder & Pricing Engine
 
 #### A. Feature Overview & Purpose
-Generates commercial hire proposals with multi-item equipment line items (Parent-Child Architecture), verifies real-time machinery availability across multiple assets, validates customer credit limits against the composite quote value, and calculates accurate line-item subtotals, statutory taxes, and discounts.
+Generates commercial hire proposals with multi-item equipment line items, verifies real-time machinery availability across multiple assets, validates customer credit limits against the composite quote value, and calculates accurate line-item subtotals, statutory taxes, and discounts.
 
 #### B. Mathematical Formula & Pricing Engine Specification
-The CERMS pricing engine strictly adheres to the following multi-item business logic:
+The CERMS pricing engine strictly adheres to the following business logic:
 
 1. **Duration in Days ($D_i$) per Line Item:**
    $$D_i = (\text{End Date}_i - \text{Start Date}_i) + 1$$
@@ -263,9 +337,8 @@ The CERMS pricing engine strictly adheres to the following multi-item business l
 
 #### C. Step-by-Step UI Actions
 1. Log in as `rental_officer`.
-2. Navigate to **Rentals** > **Quotations** > **"+ New Quotation"** (`/rentals/quotations/create/`).
+2. Navigate to **Quotations & Contracts** > **Quotations** > **"+ Create Quotation"** (`/rentals/quotations/create/`).
 3. Fill in the commercial quotation header:
-   - **Quotation No:** Read-only auto-generated sequence (e.g., `QT-2026-0001`).
    - **Customer:** `Access Engineering PLC`
    - **Project Site:** `Central Expressway Section III - Interchange`
    - **Quotation Default Start Date:** `2026-11-01`
@@ -283,7 +356,7 @@ The CERMS pricing engine strictly adheres to the following multi-item business l
      - **Line Subtotal (Live JS Preview):** `Rs. 450,000.00`
    - Click **"+ Add Equipment Asset"** to append a second line item.
    - **Line Item #2:**
-     - **Equipment Asset:** `EQ-KOM-PC200-001 (Komatsu PC200-8 Excavator)`
+     - **Equipment Asset:** `EQ-KOM-PC200-001` (or another available excavator/roller)
      - **Start Date:** `2026-11-01`
      - **End Date:** `2026-11-10` *(10 billable days)*
      - **Rate Applied (LKR):** `40,000.00`
@@ -310,49 +383,85 @@ The CERMS pricing engine strictly adheres to the following multi-item business l
 #### E. State Machine & UI Verification
 - **Quotation Status:** Created in `DRAFT` status (Grey Badge).
 - **Multi-Item Specification Table:** Detail page renders an itemized table listing each asset, serial number, rental period, rate applied, and line subtotal.
-- **Credit Check Validation:** `Access Engineering PLC` projected exposure is $\text{Rs. } 1,041,350.00 < \text{Credit Limit (Rs. } 2,000,000.00)$. The credit banner displays: *"Credit Check Passed (Margin Remaining: Rs. 958,650.00)"* styled with a green success badge.
-- **Maintenance / Breakdown Soft Warning:** *Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.* If an equipment asset in `MAINTENANCE` or `BREAKDOWN` status is selected, an inline alert dynamically appears: `⚠️ Warning: [Asset Name] is currently under maintenance. Ensure repairs are completed before the scheduled dispatch date.`
+- **Credit Check Validation:** `Access Engineering PLC` projected exposure is $\text{Rs. } 1,041,350.00 < \text{Credit Limit (Rs. } 2,000,000.00)$. The credit banner displays: *"Credit Check Passed (Margin Remaining: Rs. 958,650.00)"* with a green success badge.
 
 ---
 
-### Step 8: Managerial Approval & Rental Contract Conversion
+### Step 9: Edge Cases: Credit Limit Exceeded & Maintenance Soft Warnings
+
+#### A. Test Case 9a — Customer Credit Ceiling Exceeded (Managerial Override Gate)
+1. In Quotations, create a new quote for `Access Engineering PLC` with a huge hire period (e.g., 60 days of multiple heavy machines totaling $>$ LKR 3,000,000.00).
+2. Observe the credit validation banner:
+   - **Expected Result:** A yellow/red alert displays: `⚠️ Warning: Credit Limit Exceeded! Projected exposure (Rs. 3,500,000.00) exceeds approved limit (Rs. 2,000,000.00) by Rs. 1,500,000.00. This quotation requires mandatory Management Approval before contract execution.`
+   - Notice that the system permits quoting but enforces managerial oversight.
+
+#### B. Test Case 9b — Maintenance & Breakdown Soft Warning
+1. Log in as `workshop_mgr`.
+2. Transition an equipment asset (e.g., `EQ-KOM-PC200-002`) to status `MAINTENANCE` or `BREAKDOWN`.
+3. Log in as `rental_officer` and create a quotation selecting `EQ-KOM-PC200-002` for future dates.
+   - **Expected Result:** The system does **NOT** block the quote (assets under repair can be quoted for future dates), but renders a clear inline warning banner: `⚠️ Advisory: This asset is currently under Maintenance. Ensure repair completion is confirmed with the Workshop Manager prior to contract conversion.`
+
+---
+
+### Step 10: Managerial Approval Workflow & Contract Conversion
 
 #### A. Feature Overview & Purpose
 Validates the approval hierarchy and multi-asset contract conversion. Rental Officers cannot self-approve quotations. Upon managerial approval and customer acceptance, converting the multi-item quotation automatically generates the master `RentalContract` and corresponding `RentalContractItem` child records, reserving all quoted machinery.
-*Business Rule:* Assets under maintenance are not blocked from being quoted to accommodate future rental dates. However, they trigger a soft warning during quotation creation and managerial approval to ensure repair timelines are verified prior to contract conversion.
 
 #### B. Step-by-Step UI Actions
 1. While logged in as `rental_officer`, view the quotation detail page (`/rentals/quotations/QT-2026-0001/`).
-2. Click **"Submit for Management Review"**. Status transitions from `DRAFT` $\rightarrow$ `UNDER_REVIEW`.
+2. Click **"Submit for Approval"** (`transition/?action=submit`). Status transitions from `DRAFT` $\rightarrow$ `PENDING_INTERNAL_APPROVAL`.
 3. Notice that the **"Approve Quotation"** button is **disabled/hidden** for the `Rental Officer` role.
-4. Log out and log in as `admin` or a user with role `MANAGEMENT`.
+4. Log out and log in as `management` (`Staff@CERMS2026!`) or `admin`.
 5. Navigate to the quotation `/rentals/quotations/QT-2026-0001/`.
-6. Inspect the quotation items: Any machine currently in `MAINTENANCE` or `BREAKDOWN` status prominently displays a yellow advisory warning beneath the item as well as a top-level alert prompting the manager to consult the Workshop Manager regarding repair completion schedules.
-7. Click **"Approve Commercial Quotation"**.
-   - **State Transition:** `UNDER_REVIEW` $\rightarrow$ `APPROVED_BY_MANAGEMENT`.
-8. Click **"Mark as Sent to Customer"** $\rightarrow$ status becomes `SENT_TO_CUSTOMER`.
+6. Inspect the quotation items and credit standing banner.
+7. Click **"Approve Quotation"** (`transition/?action=approve`).
+   - **State Transition:** `PENDING_INTERNAL_APPROVAL` $\rightarrow$ `APPROVED_BY_MANAGEMENT`.
+8. Click **"Mark Sent to Customer"** $\rightarrow$ status becomes `SENT_TO_CUSTOMER`.
 9. Click **"Record Customer Acceptance"** $\rightarrow$ status becomes `ACCEPTED`.
-10. Click **"Convert to Binding Rental Contract"**.
-11. In the modal dialog, select:
-    - **Billing Cycle:** `MONTHLY` (or `DAILY`)
+10. Click **"Convert to Binding Contract"**.
+11. In the conversion dialog, select:
+    - **Billing Cycle:** `MONTHLY`
     - **Deposit Paid at Signing (LKR):** `250,000.00`
-12. Click **"Confirm & Generate Contract"**.
+12. Click **"Confirm & Convert to Contract"**.
 
 #### C. State Machine & Expected Output
 - **Quotation State:** Marked as `CONVERTED` (Badge: Green).
 - **Contract Generated:** New Rental Contract `CNT-2026-0001` created in `ACTIVE` status with individual child contract lines (`RentalContractItem`) for each machine.
 - **Fleet State Machine:** All quoted equipment assets (`EQ-CAT-320-001` and `EQ-KOM-PC200-001`) automatically transition from `AVAILABLE` $\rightarrow$ `RESERVED`.
+- **Security Deposit Escrow:** A corresponding `SecurityDeposit` record (`DEP-2026-0001`) is initialized in `HELD` status for LKR 250,000.00.
 
 ---
 
-### Step 9: Interactive Availability Calendar & Scheduling Grid
+### Step 11: Negative Test: Conflict & Double-Booking Prevention Enforcement
+
+#### A. Feature Overview & Purpose
+Strictly verifies that the conflict detection engine blocks any attempt to double-book an asset that is already reserved or on rent for overlapping dates.
+
+#### B. Step-by-Step UI Actions
+1. Log in as `rental_officer`.
+2. Click **"+ Create Quotation"** (`/rentals/quotations/create/`).
+3. Select any customer and project site.
+4. Set overlapping dates: `Start Date: 2026-11-05`, `End Date: 2026-11-08` (overlaps with `CNT-2026-0001`).
+5. In the line items, select `EQ-CAT-320-001`.
+6. Click **Create Quotation**.
+   - **Expected Result:** The system rejects the submission with a clear validation error:
+     `"Equipment 'EQ-CAT-320-001' is not available for the selected dates (2026-11-05 to 2026-11-08). Conflicting Contract: CNT-2026-0001."`
+7. Test overlap against an accepted (unconverted) quotation:
+   - Create a quotation for another asset and advance it to `ACCEPTED` status for `2026-12-01` to `2026-12-10`.
+   - Attempt to quote that same asset for `2026-12-05` to `2026-12-12`.
+   - **Expected Result:** The system detects the reservation and displays a conflict validation error preventing double-booking.
+
+---
+
+### Step 12: Interactive Availability Calendar & FullCalendar Visualizer
 
 #### A. Feature Overview & Purpose
 Validates visual scheduling, conflict detection, and color-coded event rendering using FullCalendar.js.
 
 #### B. Step-by-Step UI Actions
 1. Log in as `rental_officer` or `ops_officer`.
-2. Navigate to **Rentals** > **Availability Calendar** (`/rentals/availability-calendar/`).
+2. Navigate to **Quotations & Contracts** > **Availability Calendar** (`/rentals/availability-calendar/`).
 3. Verify the 5 top KPI summary counter cards:
    - **Total Fleet:** Total active machines in system.
    - **Available Now:** Unreserved machines ready for rent.
@@ -362,137 +471,48 @@ Validates visual scheduling, conflict detection, and color-coded event rendering
 4. Inspect the Calendar Grid for November 2026:
    - Verify that `EQ-CAT-320-001` displays a **Yellow/Blue Bar** from `2026-11-01` to `2026-11-10` with title: `[EQ-CAT-320-001] Reserved: CNT-2026-0001 (Access Engineering PLC)`.
 5. Click on the event in the calendar:
-   - **Expected Result:** `#eventDetailModal` opens showing Start Date, End Date, Daily Rate (Rs. 45,000.00), Customer name, Site, and a button **"Open Record Dossier"**.
-6. Click the top button **"Scan Available Fleet"** (`#availabilityCheckerModal`):
+   - **Expected Result:** `#eventDetailModal` opens showing Start Date, End Date, Daily Rate (Rs. 45,000.00), Customer name, Site, and a button **"Open Contract Dossier"**.
+6. Click the top button **"Check Availability"** (`#availabilityModal`):
    - Set **Start Date:** `2026-11-05`, **End Date:** `2026-11-08`, **Category:** `Hydraulic Excavators`.
-   - Click **"Scan Fleet Availability"**.
+   - Click **"Query Availability"**.
    - **Expected Result:** `EQ-CAT-320-001` is **NOT** returned because of the conflicting active contract.
+7. Test the Calendar REST API directly in the browser or terminal:
+   - Navigate to `/api/v1/rentals/calendar-events/?start=2026-11-01&end=2026-11-30`.
+   - **Expected Result (HTTP 200 OK):** JSON array of events with proper color codes (`#0d6efd` for on-rent, `#ffc107` for reserved, `#dc3545` for maintenance).
 
 ---
 
-### Step 10: Equipment Dispatch Certification & Physical Inspection
+### Step 13: Physical Yard Dispatch Certification & Checklist Handover
 
 #### A. Feature Overview & Purpose
 Performs physical equipment handover from central yard to customer site. Records initial hour meters, fuel levels, pre-existing damage inspection, and a structured per-component inspection checklist with Pass/Fail status and defect remarks. Transitions asset state to `ON_RENT` on successful submission.
 
-**Pre-existing Damage Display & Damage Gating:**
-- **Pre-existing Damage Alert:** If the selected equipment has unresolved minor damage from previous rentals, a prominent top banner dynamically displays: `Unresolved Previous Damages: [Damage Notes]` to establish baseline machine conditions before departure.
-- **Two Distinct Damage Checkboxes:**
-  1. `Log Minor Damage / Defect` (`has_minor_damage`): Documents pre-existing or mobilization cosmetic issues.
-  2. `Require Maintenance / Ground Asset` (`requires_maintenance`): Flags critical pre-dispatch safety issues, grounding the asset to `MAINTENANCE` and preventing departure.
-- **Dynamic Damage Notes Textarea:** The "Damage Description & Assessment Notes" textarea is completely hidden by default and expands via vanilla JS only if either checkbox is checked.
-
-**Checklist UI Features (as of refactored UI):**
-- Each inspection item has a **Pass checkbox** (checked = Pass, unchecked = Fail).
-- Unchecking a row auto-expands a **red defect remarks field** requiring a written description.
-- **"Mark All as Passed"** button instantly sets all rows to Pass and hides all defect fields.
-- Quick pill buttons append pre-named rows in one click.
-- JSON serialized as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
-- Checklist failures act solely as condition audit logs and do not block dispatch unless explicit maintenance is required.
-
----
-
-#### B. Test Case 10a — Instant All-Passed Dispatch
-
-**Pre-condition:** Contract `CNT-2026-0001` is in `ACTIVE` status with asset `EQ-CAT-320-001` in `RESERVED` state.
-
-1. Log in as `ops_officer` (`Staff@CERMS2026!`).
-2. Navigate to `/rentals/contracts/CNT-2026-0001/`.
-3. Click **"Process Equipment Dispatch"** → navigates to `/rentals/contracts/CNT-2026-0001/dispatch/`.
-4. Fill in the header fields:
+#### B. Step-by-Step UI Actions
+1. Log in as `ops_officer` (`Staff@CERMS2026!`) or `field_officer`.
+2. Navigate to **Quotations & Contracts** > **Rental Contracts** > `CNT-2026-0001` (`/rentals/contracts/CNT-2026-0001/`).
+3. Click **"Dispatch Equipment"** (`/rentals/contracts/CNT-2026-0001/dispatch/`).
+4. Fill in the dispatch handover fields:
    - **Dispatch Date & Time:** `2026-11-01 08:30`
    - **Dispatch Hour Meter (hrs):** `1,250.00`
    - **Dispatch Fuel Level (%):** `100`
-5. Verify the checklist table pre-populates with 6 standard rows, all **checkboxes checked** (Pass).
-6. Click the **"Mark All as Passed"** button.
-   - **Expected:** All checkboxes remain checked; all defect input fields are hidden; row background is white.
-7. Click **"Certify & Dispatch Machinery"**.
+5. Inspect the Physical Inspection Checklist table:
+   - Verify rows pre-populate with the standard items (`Cabin & Windshield`, `Hydraulic Lines & Hoses`, `Undercarriage / Tracks`, `Safety Beacon & Alarm`, `Engine & Fluid Levels`, `Transport Tie-Downs`).
+   - Click **"Mark All as Passed"**. Verify all rows show green Pass indicators.
+   - *(Optional defect test):* Uncheck `Hydraulic Lines & Hoses`, verify defect textarea expands with red border, and enter remarks: `Minor paint scuff on hose coupling`.
+6. Click **"Certify & Dispatch Machinery"**.
 
-**Expected Output:**
-- `DispatchReturn` record created (transaction ID `TRX-2026-0001`).
-- `RentalContract` status transitions to `ON_RENT`.
-- `Equipment` asset `EQ-CAT-320-001` status transitions to `ON_RENT` (Blue Badge).
-- Availability Calendar event changes from Yellow → **Blue (`#0d6efd`)**.
-- `dispatch_checklist` JSON in database: all items show `"status": "Pass"` and `"remarks": ""`.
-
----
-
-#### C. Test Case 10b — Defect / Failure Logging
-
-1. Navigate to the dispatch form for a second contract (or reset test data).
-2. On the checklist table, **uncheck** the row for `Hydraulic Lines & Hoses`.
-   - **Expected:** Checkbox unchecks, the green "Pass — No Issues" label hides, and a **red-bordered defect text input** expands within that row. The row background turns **red (`table-danger`)**.
-3. Type in the defect input: `Leaking main cylinder seal — requires immediate attention`.
-4. Leave all other rows checked (Pass).
-5. Click **"Certify & Dispatch Machinery"**.
-
-**Expected Output:**
-- Form submits successfully.
-- `dispatch_checklist` JSON in the `DispatchReturn` record contains:
-  ```json
-  {
-    "Cabin & Windshield":      { "status": "Pass", "remarks": "" },
-    "Hydraulic Lines & Hoses": { "status": "Fail", "remarks": "Leaking main cylinder seal — requires immediate attention" },
-    "Undercarriage / Tracks":  { "status": "Pass", "remarks": "" },
-    "Safety Beacon & Alarm":   { "status": "Pass", "remarks": "" },
-    "Engine & Fluid Levels":   { "status": "Pass", "remarks": "" },
-    "Transport Tie-Downs":     { "status": "Pass", "remarks": "" }
-  }
-  ```
-- The system does **not** block submission (defect logging is for records only; dispatch proceeds).
+#### C. State Machine & Expected Output
+- **Logistics Record:** `DispatchReturn` record created (transaction ID `TRX-2026-0001`).
+- **Contract State:** `RentalContract` transitions to `ON_RENT`.
+- **Fleet State Machine:** `EQ-CAT-320-001` status transitions to `ON_RENT` (Blue Badge).
+- **Calendar Update:** Event bar color updates to **Blue (`#0d6efd`)**.
 
 ---
 
-#### D. Test Case 10c — Dynamic Item Addition & Deletion
-
-1. On the dispatch form, click the pill button **"+ Safety Beacon & Alarm"**.
-   - **Expected:** Since the item already exists, no duplicate row is appended. Focus moves to the existing row's checkbox.
-2. Click **"+ Add Item"** button.
-   - **Expected:** A new blank row is appended with the component name input focused.
-3. Type `Bucket / Blade Attachment` in the component name field.
-4. Leave checkbox checked (Pass). Verify the "Pass — No Issues" label is visible.
-5. Click the 🗑️ **trash icon** on the `Transport Tie-Downs` row.
-   - **Expected:** The row is immediately removed from the DOM.
-6. Submit the form.
-
-**Expected Output:**
-- Serialized JSON includes `Bucket / Blade Attachment` with `"status": "Pass"`.
-- Serialized JSON does **not** include `Transport Tie-Downs` (it was deleted).
-- All other 5 standard items are present.
-
----
-
-#### E. State Machine & Expected Output (General)
-- **Logistics Record:** `DispatchReturn` record created with transaction ID `TRX-YYYY-XXXX`.
-- **Contract State:** `RentalContract` transitions to `ON_RENT` (or `DISPATCHED`).
-- **Fleet State Machine:** Asset operational status transitions to `ON_RENT` (Blue Badge).
-- **Calendar Update:** The event on the Availability Calendar changes color from Yellow to **Blue (`#0d6efd`)**.
-
----
-
-
-
-### Step 11: Equipment Return Inspection, Bifurcated Damage & Decoupled Maintenance
+### Step 14: Equipment Return Inspection, Meter Reconciliation & Bifurcated Damage
 
 #### A. Feature Overview & Purpose
 Records equipment return from customer site at the end of the hire period. Compares operating hours against standard contractual thresholds to calculate billable excess overtime hours. Conducts a structured post-rental physical check-in inspection using an interactive checklist and decoupled damage routing.
-
-**Bifurcated Damage Architecture (Return):**
-- **Two Distinct Checkboxes:**
-  1. `Log Minor Damage / Defect` (`has_minor_damage`): For minor cosmetic defects (scratches, paint chips). The equipment transitions back to **`AVAILABLE`** (eligible for immediate future hiring) and displays persistent dual status badges (`[AVAILABLE]` + `[MINOR DAMAGE]`).
-  2. `Require Maintenance / Ground Asset` (`requires_maintenance`): For severe mechanical/safety issues. Transitions equipment directly to **`MAINTENANCE`**, grounding the asset until workshop repair.
-- **Dynamic Damage Notes Textarea:** Completely hidden by default; revealed via vanilla JS only if either checkbox is checked.
-- **Checklist Independence:** Component failure in the JSON checklist does NOT automatically trigger `MAINTENANCE`. It acts purely as a condition audit log.
-
-**Return Checklist UI Features (as of refactored UI):**
-- Each return inspection item features an interactive **Pass checkbox** (checked = Pass, unchecked = Fail).
-- Unchecking a row automatically hides the green "Pass" indicator and expands a **red defect remarks text input** with red row highlight (`table-danger`).
-- **"Mark All as Passed"** button instantly certifies all return checklist rows as Pass and hides defect fields.
-- Quick suggestion pill buttons append common return components (`+ Cabin & Windshield`, `+ Hydraulic Lines & Hoses`, `+ Undercarriage / Tracks`, `+ Engine & Fluid Levels`, `+ Safety Beacon & Alarm`, `+ Cleaning & Washing`) in one click without duplicates.
-- Pre-populates components dynamically from the original dispatch checklist baseline or 6 standard return inspection defaults.
-- Serializes inspection rows to hidden JSON input (`id_return_checklist_json`) as `{ "Component": { "status": "Pass"|"Fail", "remarks": "..." } }`.
-
----
 
 #### B. Excess Hour Meter Calculation Logic
 - **Contract Rental Duration:** 10 Days
@@ -507,156 +527,88 @@ Records equipment return from customer site at the end of the hire period. Compa
 
 ---
 
-#### C. Test Case 11a — Clean Return Check-in (All Passed)
-
-**Pre-condition:** Contract `CNT-2026-0001` has active dispatch `TRX-2026-0001` with asset `EQ-CAT-320-001` in `ON_RENT` status.
-
-1. Log in as `ops_officer` (`Staff@CERMS2026!`).
-2. Navigate to **Rentals** > **Contracts** > `CNT-2026-0001` (`/rentals/contracts/CNT-2026-0001/`).
-3. In the Active Dispatches section, click **"Process Equipment Return"** (`/rentals/returns/TRX-2026-0001/`).
+#### C. Step-by-Step UI Actions
+1. Log in as `ops_officer` or `field_officer`.
+2. Navigate to `CNT-2026-0001` (`/rentals/contracts/CNT-2026-0001/`).
+3. In the Active Dispatches section, click **"Process Return Handover"** (`/rentals/returns/TRX-2026-0001/`).
 4. Fill in the return telemetry header fields:
    - **Return Date & Time:** `2026-11-10 17:00`
    - **Return Hour Meter (hrs):** `1,355.50`
    - **Return Fuel Level (%):** `80.00` *(20% fuel deficit)*
-   - **Log Minor Damage / Defect:** Unchecked (`False`)
-   - **Require Maintenance / Ground Asset:** Unchecked (`False`)
-   - Verify Damage Description textarea remains hidden.
-5. Inspect the Physical Inspection & Return Checklist table:
-   - Verify rows pre-populate with the 6 standard items, all checkboxes checked (Pass).
-   - Click the **"Mark All as Passed"** button.
-   - **Expected:** All checkboxes remain checked; green "Pass — No Issues" indicators remain visible; defect textboxes remain hidden.
-6. Click **"Certify Equipment Return Check-in"**.
+5. Test **Bifurcated Damage Routing**:
+   * **Scenario 1 (Clean Return):** Leave both damage checkboxes unchecked.
+   * **Scenario 2 (Minor Cosmetic Damage):** Check **Log Minor Damage / Defect** (`has_minor_damage=True`), enter notes: `Scratched side panel from gravel loading`. *Asset will revert to `AVAILABLE` with a yellow `[MINOR DAMAGE]` warning badge.*
+   * **Scenario 3 (Grounding Breakdown):** Check **Require Maintenance / Ground Asset** (`requires_maintenance=True`), enter notes: `Hydraulic pump seal ruptured during final trenching`. *Asset will transition to `MAINTENANCE` and be grounded from new contracts.*
+6. For this baseline test run, select **Scenario 2** (Minor Cosmetic Damage).
+7. Inspect the checklist, click **"Mark All as Passed"**.
+8. Click **"Certify Equipment Return Check-in"**.
 
-**Expected Output:**
-- `hours_operated` stored as `105.50 hrs`.
-- `excess_hours_calculated` stored as `25.50 hrs`.
-- `RentalContract` status transitions to `RETURNED`.
-- `Equipment` asset `EQ-CAT-320-001` hour meter updates to `1,355.50 hrs` and status reverts to **`AVAILABLE`** (Green Badge).
-- `return_checklist` JSON in database: all items show `"status": "Pass"` and `"remarks": ""`.
-- UI Alert: Success message: *"Equipment 'EQ-CAT-320-001' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
+#### D. State Machine & Expected Output
+- **Logistics Telemetry:** `hours_operated` stored as `105.50 hrs`; `excess_hours_calculated` stored as `25.50 hrs`.
+- **Contract State:** `RentalContract` status transitions to `RETURNED`.
+- **Fleet State Machine:** `EQ-CAT-320-001` hour meter updates to `1,355.50 hrs`. Status reverts to `AVAILABLE` with the `[MINOR DAMAGE]` badge.
+- **Success Alert:** Alert confirms: *"Equipment 'EQ-CAT-320-001' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs). Automated Tax Invoice generated."*
 
 ---
 
-#### D. Test Case 11b — Minor Damage Logging (Returns to AVAILABLE with Flag)
-
-1. Navigate to the return form for an active transaction.
-2. Enter valid closing telemetry:
-   - **Return Hour Meter:** `1,355.50`
-   - **Return Fuel Level:** `80.00`
-3. Check **Log Minor Damage / Defect** checkbox (`True`). Leave **Require Maintenance** unchecked.
-   - **Expected:** Damage Description textarea dynamically expands and is revealed.
-4. Enter Damage Notes: `Scratched door panel and worn decals from site transport`.
-5. Click **"Certify Equipment Return Check-in"**.
-
-**Expected Output:**
-- Equipment returns to **`AVAILABLE`** status (asset is NOT grounded and can be rented again immediately).
-- Equipment has `has_minor_damage = True` and displays dual status badges: `[AVAILABLE]` and yellow `[MINOR DAMAGE]` badge on Fleet Master and Contract pages.
-
----
-
-#### E. Test Case 11c — Critical Defect & Maintenance Routing (Grounding Asset)
-
-1. Navigate to the return form for an active transaction.
-2. Enter valid closing telemetry:
-   - **Return Hour Meter:** `1,355.50`
-   - **Return Fuel Level:** `80.00`
-3. On the checklist, uncheck `Hydraulic Lines & Hoses` and enter remarks: `Blown seal on main hoist ram`.
-4. Check **Require Maintenance / Ground Asset** checkbox (`True`).
-   - **Expected:** Damage Description textarea expands.
-5. Enter Damage Notes: `Severe hydraulic leak requires workshop overhaul and new cylinder pack`.
-6. Click **"Certify Equipment Return Check-in"**.
-
-**Expected Output:**
-- `Equipment` status transitions to **`MAINTENANCE`** (grounded in workshop).
-- `RentalContract` status transitions to `RETURNED`.
-- Asset cannot be dispatched on new contracts until workshop maintenance completes.
-
----
-
-#### F. State Machine & Expected Output (General)
-- **Logistics Calculations:** 
-  - `hours_operated` stored as `105.50 hrs`.
-  - `excess_hours_calculated` stored as `25.50 hrs`.
-- **Contract State:** `RentalContract` transitions to `RETURNED`.
-- **Fleet State Machine:** Asset current hour meter updates to `1,355.50 hrs`. Status becomes:
-  - **`MAINTENANCE`** if `requires_maintenance == True`
-  - **`AVAILABLE`** (with `has_minor_damage` flag) if only `has_minor_damage == True`
-  - **`AVAILABLE`** (clean) if neither damage checkbox is checked
-- **UI Alert:** Success message: *"Equipment '<asset_code>' returned successfully. Total hours: 105.50 hrs (Excess: 25.50 hrs)."*
-
----
-
-### Step 12: Automated Final Invoicing, Excess Charges, Deposit Offset & PDF Rendering
+### Step 15: Automated Return-to-Invoice Trigger & Real-Time Settlement
 
 #### A. Feature Overview & Purpose
-Aggregates base hire fees, calculates overtime hour penalties ($25.50\text{ hrs} \times \text{Overtime Rate}$), applies damages/penalties, adds statutory 18% VAT, automatically deducts held security deposits, updates customer debt ledgers, and generates a WeasyPrint A4 Tax Invoice PDF.
+Verifies the automated return-to-invoice service trigger. When the return is certified in Step 14, the system automatically invokes `generate_final_rental_invoice` in the service layer, calculates all base tariffs, excess hours, fuel penalties, and deposit offsets, and creates the Tax Invoice in `UNPAID` status immediately.
 
-#### B. Mathematical Formula & Billing Breakdown
-1. **Rental Subtotal (Base Tariff):** $\text{Rs. } 450,000.00$
-2. **Transport Logistics:** $\text{Rs. } 50,000.00$
-3. **Overtime Hourly Rate:** 
-   $$\text{Derived Hourly Rate} = \frac{\text{Daily Rate}}{8} = \frac{45,000}{8} = \text{Rs. } 5,625.00/\text{hr}$$
-4. **Excess Operating Hours Charge:**
-   $$\text{Excess Hours Charge} = 25.50 \text{ hrs} \times \text{Rs. } 5,625.00 = \text{Rs. } 143,437.50$$
-5. **Damage / Repair Charges:** $\text{Rs. } 0.00$
-6. **Gross Taxable Total:**
-   $$\text{Gross Taxable Base} = 450,000.00 + 50,000.00 + 143,437.50 = \text{Rs. } 643,437.50$$
-7. **Statutory 18% VAT:**
-   $$\text{VAT (18\%)} = 643,437.50 \times 0.18 = \text{Rs. } 115,818.75$$
-8. **Gross Total with Tax:**
-   $$\text{Gross Billable Total} = 643,437.50 + 115,818.75 = \text{Rs. } 759,256.25$$
-9. **Security Deposit Deduction Offset:**
-   - Security Deposit Held in Escrow: $\text{Rs. } 150,000.00$
-   - Applied Deposit Offset: $-\text{Rs. } 150,000.00$
-10. **Net Final Payable Amount:**
-    $$\text{Net Payable} = 759,256.25 - 150,000.00 = \text{Rs. } 609,256.25$$
-
----
-
-#### C. Step-by-Step UI Actions
+#### B. Step-by-Step UI Actions
 1. Log in as `accountant` (`Staff@CERMS2026!`).
-2. Navigate to **Finance** > **Billing & Invoices** (`/finance/invoices/`).
-3. Click **"Generate Final Contract Invoice"** (`/finance/invoices/create/?contract=CNT-2026-0001`).
-4. Select Contract `CNT-2026-0001`.
-5. The system auto-detects:
-   - Excess Hours: `25.50 hrs`
-   - Excess Hours Rate: `Rs. 5,625.00/hr` (Excess Charge: `Rs. 143,437.50`)
-   - Security Deposit Held: `Rs. 150,000.00`
-   - Apply Deposit Checkbox: Checked (`True`)
-   - Payment Terms / Due Date: `Net 30 Days` (30 days from invoice date)
-6. Click **"Generate & Finalize Tax Invoice"**.
+2. Navigate to **Finance & Billing** > **Tax Invoices** (`/finance/invoices/`).
+3. Locate the automatically created invoice for Contract `CNT-2026-0001`:
+   - **Invoice Number:** Auto-generated sequence (e.g., `INV-2026-0001`)
+   - **Customer:** `Access Engineering PLC`
+   - **Status:** `UNPAID` (Yellow Badge)
+   - **Due Date:** Automatically set to Net 30 Days from issue date
+4. Click to open **Invoice Detail View** (`/finance/invoices/INV-2026-0001/`).
 
----
-
-#### D. Billing Verification Table
+#### C. Billing Mathematics Verification Table
 
 | Line Item Breakdown | Basis / Quantity | Unit Price (LKR) | Line Total (LKR) |
 | :--- | :--- | :--- | :--- |
 | **Rental Base Tariff** | 10 Billable Days | Rs. 45,000.00 / day | **Rs. 450,000.00** |
 | **Mobilization Logistics** | Round-trip delivery | Fixed Fee | **Rs. 50,000.00** |
 | **Overtime Excess Hours** | 25.50 Meter Hours | Rs. 5,625.00 / hr | **Rs. 143,437.50** |
-| **Damage & Repairs** | No damages assessed | — | **Rs. 0.00** |
-| **Subtotal (Taxable)** | Sum of operational charges | — | **Rs. 643,437.50** |
-| **VAT (18%)** | 18% Statutory Sales Tax | — | **Rs. 115,818.75** |
-| **Gross Total** | Subtotal + VAT | — | **Rs. 759,256.25** |
+| **Damage & Repairs** | Minor cosmetic (no penalty) | — | **Rs. 0.00** |
+| **Subtotal (Taxable Base)** | Sum of operational charges | — | **Rs. 643,437.50** |
+| **Statutory VAT (18%)** | 18% Statutory Sales Tax | — | **Rs. 115,818.75** |
+| **Gross Total with Tax** | Subtotal + VAT | — | **Rs. 759,256.25** |
 | **Deposit Offset** | Held Escrow Deposit | Deducted | **- Rs. 150,000.00** |
 | **Net Total Payable** | Final Invoice Balance Due | **Net 30 Days** | **Rs. 609,256.25** |
 
-#### E. State Machine & Expected Output
-- **Invoice Record:** `INV-2026-0001` created in `UNPAID` status.
-- **Deposit Record:** `DEP-2026-0001` status transitions to `DEDUCTED`.
-- **Customer Ledger:** `Access Engineering PLC` outstanding debt balance increases from $\text{Rs. } 0.00 \rightarrow \text{Rs. } 609,256.25$.
-- **PDF Generation:** Itemized Tax Invoice PDF automatically compiled via WeasyPrint and attached to the invoice record.
+#### D. Customer Accounts Receivable Verification
+* Navigate to `Access Engineering PLC` profile (`/rentals/customers/CUST-2026-001/`).
+* **Expected Result:** `current_outstanding_balance` has automatically incremented from `Rs. 0.00` to **`Rs. 609,256.25`**.
+* Remaining credit ceiling reflects: $\text{Rs. } 2,000,000.00 - 609,256.25 = \text{Rs. } 1,390,743.75$.
 
 ---
 
-### Step 13: Invoice Payment Settlement & Customer Ledger Reconciliation
+### Step 16: Interim / Ad-hoc Contract Billing Flow (Manual Generation Fallback)
 
 #### A. Feature Overview & Purpose
-Records customer payments (Bank Transfer, Cheque, Cash), updates invoice payment status (`UNPAID` $\rightarrow$ `PARTIALLY_PAID` $\rightarrow$ `PAID`), and decreases customer accounts receivable balances.
+Validates manual or interim invoice generation for long-term rental contracts (e.g., monthly billing cycles before return).
 
 #### B. Step-by-Step UI Actions
-1. In the Invoice Detail page (`/finance/invoices/INV-2026-0001/`), click **"Record Payment"** (`#paymentModal`).
+1. Navigate to **Rental Contracts** > select an active contract (`/rentals/contracts/<contract_no>/`).
+2. Click **"Generate Periodic Invoice"** (`/finance/contracts/<contract_no>/generate-invoice/`).
+3. Set the billing period dates (e.g., Month 1: `2026-11-01` to `2026-11-30`).
+4. Select deposit deduction options if applicable.
+5. Click **"Generate Invoice"**.
+   - **Expected Result:** Interim tax invoice generated with accurate billing period line items.
+
+---
+
+### Step 17: Invoice Payment Settlement & Customer Ledger Reconciliation
+
+#### A. Feature Overview & Purpose
+Records customer payments (Bank Transfer, Cheque, Cash, Card), updates invoice payment status (`UNPAID` $\rightarrow$ `PARTIALLY_PAID` $\rightarrow$ `PAID`), and decreases customer accounts receivable balances.
+
+#### B. Step-by-Step UI Actions
+1. In the Invoice Detail page (`/finance/invoices/INV-2026-0001/`), click **"Record Payment"** (`#paymentModal` or `/finance/invoices/INV-2026-0001/pay/`).
 2. Enter payment settlement details:
    - **Payment Amount (LKR):** `609,256.25` (Full settlement)
    - **Payment Method:** `BANK_TRANSFER`
@@ -673,32 +625,33 @@ Records customer payments (Bank Transfer, Cheque, Cash), updates invoice payment
 
 ---
 
-### Step 14: Escrow Security Deposit Ledger & Refund Lifecycle
+### Step 18: Escrow Security Deposit Lifecycle & Refund Ledger
 
 #### A. Feature Overview & Purpose
-Validates the escrow deposit accounting ledger (`finance/deposits/`) tracking deposits received, deducted against damages/excess hours, or refunded to clients upon contract completion.
+Validates the escrow deposit accounting ledger (`/finance/deposits/`) tracking deposits received, deducted against damages/excess hours, or refunded to clients upon contract completion.
 
 #### B. Step-by-Step UI Actions
 1. Log in as `accountant` or `admin`.
-2. Navigate to **Finance** > **Deposit Ledger** (`/finance/deposits/`).
+2. Navigate to **Finance & Billing** > **Deposit Ledger** (`/finance/deposits/`).
 3. Locate deposit record `DEP-2026-0001` for Contract `CNT-2026-0001`:
-   - **Initial Deposit Received:** `Rs. 150,000.00`
+   - **Initial Deposit Received:** `Rs. 250,000.00`
    - **Deducted Amount:** `Rs. 150,000.00` (Applied against Invoice `INV-2026-0001`)
-   - **Remaining Held Balance:** `Rs. 0.00`
+   - **Remaining Held Balance:** `Rs. 100,000.00`
    - **Status:** `DEDUCTED`
-4. *(Optional Scenario - Unused Deposit Refund):*
-   - For contracts with zero damages and zero overtime, open the deposit dossier and click **"Process Deposit Refund"**.
-   - Enter bank transfer reference and click **"Confirm Refund"**.
-   - **Expected Result:** Status transitions to `REFUNDED` and deposit escrow liability is closed.
+4. Click **"Process Deposit Refund"** (`/finance/deposits/DEP-2026-0001/refund/`):
+   - Enter refund amount: `Rs. 100,000.00`
+   - Enter bank transfer reference: `HNB-REF-00129`
+   - Click **"Confirm Refund"**.
+5. **Expected Result:** Status transitions to `REFUNDED` and deposit escrow liability is closed.
 
 ---
 
-### Step 15: Document Export & WeasyPrint PDF Generation Audit
+### Step 19: Pixel-Perfect WeasyPrint PDF Generation Audit
 
 #### A. Feature Overview & Purpose
 Validates visual layout, company branding, itemized tables, dual signatures, and mathematical accuracy of all three customer-facing PDF reports.
 
-#### B. Step-by-Step UI Actions & Visual Audit Checklist
+#### B. Visual Audit Checklist Matrix
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -726,11 +679,33 @@ Validates visual layout, company branding, itemized tables, dual signatures, and
 ```
 
 1. Navigate to Quotation `QT-2026-0001` and click **"Download PDF"** (`/rentals/quotations/QT-2026-0001/pdf/`).
-   - Open downloaded PDF: Verify crisp typography, clean page margins, and exact financial figures ($\text{Rs. } 563,450.00$).
+   - Open downloaded PDF: Verify crisp typography, clean page margins, company header, and exact financial figures ($\text{Rs. } 1,041,350.00$).
 2. Navigate to Contract `CNT-2026-0001` and click **"Download Contract Agreement PDF"** (`/rentals/contracts/CNT-2026-0001/pdf/`).
-   - Verify legal clauses and signature boxes for both Company Officer and Customer Representative.
+   - Verify legal clauses, asset serial numbers, and signature boxes for both Company Officer and Customer Representative.
 3. Navigate to Invoice `INV-2026-0001` and click **"Download Tax Invoice PDF"** (`/finance/invoices/INV-2026-0001/pdf/`).
    - Verify that Net Total Payable reads $\text{Rs. } 609,256.25$ and the deposit deduction of $\text{Rs. } 150,000.00$ is clearly displayed.
+
+---
+
+### Step 20: System Audit Tracking Verification (`TimeStampedModel` & `created_by`)
+
+#### A. Feature Overview & Purpose
+Validates that every operational record records who created it and when, satisfying enterprise auditability requirements.
+
+#### B. Step-by-Step UI Actions
+1. Log in as `admin`.
+2. Navigate to Django Admin `/admin/`.
+3. Open any recently created record:
+   - Equipment `/admin/fleet/equipment/EQ-CAT-320-001/change/`
+   - Customer `/admin/rentals/customer/CUST-2026-001/change/`
+   - Quotation `/admin/rentals/quotation/QT-2026-0001/change/`
+   - Invoice `/admin/finance/invoice/INV-2026-0001/change/`
+4. Scroll to the **Audit Information** section at the bottom of the form.
+5. **Expected Result:**
+   - **Created By:** Displays the active username (e.g., `rental_officer`, `workshop_mgr`, or `admin`).
+   - **Created At:** Displays exact creation timestamp.
+   - **Updated At:** Displays latest modification timestamp.
+   - All audit fields are strictly read-only.
 
 ---
 
@@ -739,23 +714,28 @@ Validates visual layout, company branding, itemized tables, dual signatures, and
 | Test Phase | Subsystem Under Test | Expected State / Math Verification | Status | QA Sign-off |
 | :---: | :--- | :--- | :---: | :---: |
 | **01** | User Authentication & RBAC | Protected URLs return 403 for unauthorized roles; login/logout works cleanly. | `PASSED` | [ ] |
-| **02** | Fleet Category Setup | Category `EXC` created and listed in dropdowns. | `PASSED` | [ ] |
-| **03** | Equipment Master | `EQ-CAT-320-001` created with initial status `AVAILABLE`. | `PASSED` | [ ] |
-| **04** | Tariff Card Configuration | Daily (45k), Weekly (280k), Monthly (1.1M) & Overtime rate stored. | `PASSED` | [ ] |
-| **05** | Customer Master | `Access Engineering PLC` created with 2M credit limit. | `PASSED` | [ ] |
-| **06** | Project Site Master | `Central Expressway Section III` linked to customer. | `PASSED` | [ ] |
-| **07** | Quotation Pricing Engine | $\text{Grand Total} = (\text{Base } 450\text{k} + 50\text{k Transport} + 85,950\text{ VAT}) - 22,500 = \text{Rs. } 563,450.00$. | `PASSED` | [ ] |
-| **08** | Approval & Contract Conversion | Management approval required; quotation converted; asset transitions to `RESERVED`. | `PASSED` | [ ] |
-| **09** | Availability Calendar | FullCalendar renders blue/yellow event; conflict engine excludes rented equipment. | `PASSED` | [ ] |
-| **10** | Equipment Dispatch Handover | Hour meter 1,250.00 logged; asset transitions to `ON_RENT`. | `PASSED` | [ ] |
-| **11** | Return & Hour Reconciliation | Meter 1,355.50 logged; 25.50 excess hours computed; asset reverts to `AVAILABLE`. | `PASSED` | [ ] |
-| **12** | Invoicing Engine & VAT | Overtime charge (143,437.50) + Base + VAT - 150k deposit = $\text{Rs. } 609,256.25$. | `PASSED` | [ ] |
-| **13** | Payment Settlement | Full payment recorded; Invoice marked `PAID`; customer balance returns to 0.00. | `PASSED` | [ ] |
-| **14** | Security Deposit Ledger | Deposit `DEP-2026-0001` marked `DEDUCTED`; balance 0.00. | `PASSED` | [ ] |
-| **15** | WeasyPrint PDF Rendering | Quotation, Contract, and Tax Invoice PDFs generate cleanly with pixel-perfect A4 styling. | `PASSED` | [ ] |
+| **02** | REST API & JWT Token Auth | `/api/v1/auth/token/` returns access/refresh pair; `/me/` returns role payload. | `PASSED` | [ ] |
+| **03** | Fleet Category Setup | Category `EXC` created with unique slug code. | `PASSED` | [ ] |
+| **04** | Equipment Asset Master | `EQ-CAT-320-001` created with initial status `AVAILABLE` and specs JSON. | `PASSED` | [ ] |
+| **05** | Rental Tariff Cards | Daily (45k), Weekly (280k), Monthly (1.1M) & Overtime rate stored. | `PASSED` | [ ] |
+| **06** | Customer Master & Standing | `Access Engineering PLC` created with 2M credit limit and active standing. | `PASSED` | [ ] |
+| **07** | Project Site Master | `Central Expressway Section III` created with GPS coordinates and linked. | `PASSED` | [ ] |
+| **08** | Multi-Asset Quotation Engine | Line 1 (450k) + Line 2 (400k) - 5% disc + 75k trans + 18% VAT = $\text{Rs. } 1,041,350.00$. | `PASSED` | [ ] |
+| **09** | Credit & Maintenance Warnings | Credit ceiling warnings trigger; maintenance soft warnings display without blocking. | `PASSED` | [ ] |
+| **10** | Approval & Contract Conversion | Management approval required; quotation converted; assets transition to `RESERVED`. | `PASSED` | [ ] |
+| **11** | Conflict & Overlap Prevention | Double-booking overlapping dates on active contract or accepted quote is blocked. | `PASSED` | [ ] |
+| **12** | FullCalendar Scheduling Grid | Timeline view renders blue/yellow bars; REST API `/calendar-events/` returns events. | `PASSED` | [ ] |
+| **13** | Equipment Dispatch Handover | Opening meter 1,250.00 & 100% fuel logged; assets transition to `ON_RENT`. | `PASSED` | [ ] |
+| **14** | Return Inspection & Damage | Closing meter 1,355.50 (25.5 excess hrs); minor damage returns to `AVAILABLE` with badge. | `PASSED` | [ ] |
+| **15** | Automated Return-to-Invoice | Tax invoice auto-generated upon return check-in without manual finance navigation. | `PASSED` | [ ] |
+| **16** | Periodic / Ad-hoc Invoicing | Manual invoice generation for interim periods from contract view functions cleanly. | `PASSED` | [ ] |
+| **17** | Payment Settlement | Full payment recorded; Invoice marked `PAID`; customer balance returns to 0.00. | `PASSED` | [ ] |
+| **18** | Security Deposit Ledger | Escrow deposit `DEP-2026-0001` deducted/refunded; balance liability cleared. | `PASSED` | [ ] |
+| **19** | WeasyPrint PDF Generation | Quotation, Contract, and Tax Invoice PDFs generate cleanly with pixel-perfect A4 styling. | `PASSED` | [ ] |
+| **20** | System Auditability | `created_by`, `created_at`, `updated_at` populated across all models. | `PASSED` | [ ] |
 
 ---
 
 ## 6. Summary
 
-This manual testing guide verifies the complete end-to-end lifecycle of the CERMS platform. By following the 15 steps sequentially, test teams can guarantee that all operational, financial, and logistical workflows perform with zero regressions before production deployment.
+This manual testing guide verifies the complete end-to-end lifecycle of the CERMS platform. By following these 20 steps sequentially, test teams can guarantee that all operational, financial, and logistical workflows perform with zero regressions before initiating Phase 2 development.
